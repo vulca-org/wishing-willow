@@ -22,6 +22,9 @@ final class WillowStore {
     /// 「你在 A 会话打字、面板弹出 B 的标签」。
     var onTurnStarted: ((SessionState) -> Void)?
 
+    /// 每次扫描之后调用。灵动岛靠它在「有没有活动会话」变化时重新定宽。
+    var onReload: (() -> Void)?
+
     private var lastTurnIds: [String: String] = [:]
     private var watcher: DirectoryWatcher?
     private var poll: Timer?
@@ -106,6 +109,7 @@ final class WillowStore {
             onTurnStarted?(s)
         }
         primed = true
+        onReload?()
     }
 
     private var primed = false

@@ -31,13 +31,37 @@ struct IslandView: View {
             )
             .fill(Color.black)
 
-            if state.expanded { IslandExpandedContent(store: store, seen: seen) } else { compact }
+            if state.expanded {
+                IslandExpandedContent(store: store, seen: seen)
+            } else if focus == nil {
+                idle
+            } else {
+                compact
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .onHover(perform: onHover)
         .onTapGesture(perform: onClick)
         .environment(\.colorScheme, .dark)
+    }
+
+    // MARK: 空闲
+
+    /// 没有活动会话：两翼收窄，左翼一个暗点表示「在跑、空闲」。
+    /// 不画东西也不占宽度；但不能完全消失——完全消失和「app 没在跑」分不开。
+    private var idle: some View {
+        HStack(spacing: 0) {
+            HStack {
+                Spacer(minLength: 0)
+                Circle().fill(Color.white.opacity(0.3)).frame(width: 5, height: 5)
+            }
+            .padding(.trailing, 7)
+            .frame(maxWidth: .infinity)
+            Color.clear.frame(width: notchWidth)
+            Color.clear.frame(maxWidth: .infinity)
+        }
+        .frame(height: 28)
     }
 
     // MARK: 收起

@@ -42,6 +42,9 @@ final class IslandController {
     private(set) var yielding = false
 
     static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 67pt 算
+    /// 没有活动会话时的翼宽。先前空闲也占 340pt、什么都不画——一条空黑条，
+    /// 空白内容，而且和「坏了」长得一样。真实截图里看出来的。
+    static let idleWing: CGFloat = 22
     static let expandedWidth: CGFloat = 480
 
     init(store: WillowStore) { self.store = store }
@@ -58,6 +61,7 @@ final class IslandController {
         panel.contentView = host
 
         store.onTurnStarted = { [weak self] _ in self?.flash() }
+        store.onReload = { [weak self] in self?.layout(animated: true) }
         store.start()
         layout(animated: false)
         panel.orderFrontRegardless()
@@ -89,14 +93,18 @@ final class IslandController {
     private func layout(animated: Bool) {
         guard let s = screen() else { return }
         let g = notchGeometry()
+        let idle = FocusRule.focus(store, seen) == nil
         let size = state.expanded
             ? CGSize(width: Self.expandedWidth, height: expandedHeight())
-            : CGSize(width: g.width + Self.wing * 2, height: g.height)
+            : CGSize(width: g.width + (idle ? Self.idleWing : Self.wing) * 2, height: g.height)
         // 让路：挂到刘海下方 6pt，不和别的刘海 app 抢同一块矩形。
         let drop: CGFloat = yielding ? g.height + 6 : 0
         let rect = NSRect(x: g.midX - size.width / 2,
                           y: s.frame.maxY - drop - size.height,
                           width: size.width, height: size.height)
+        // 每次扫描都会走到这里（约 5 秒一次），尺寸没变就别动，免得它一直在闪。
+        if abs(panel.frame.width - rect.width) < 0.5, abs(panel.frame.height - rect.height) < 0.5,
+           abs(panel.frame.minX - rect.minX) < 0.5, abs(panel.frame.minY - rect.minY) < 0.5 { return }
         panel.setFrame(rect, display: true, animate: animated)
     }
 
