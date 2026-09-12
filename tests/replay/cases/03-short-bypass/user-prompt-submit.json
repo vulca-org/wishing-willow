@@ -5,6 +5,5 @@
   "cwd": "/tmp/fake/project",
   "permission_mode": "default",
   "hook_event_name": "UserPromptSubmit",
-  "user_prompt": "好的 继续吧 没问题",
-  "prompt_start_time": "2026-09-12T10:05:00Z"
+  "prompt": "好的 继续吧 没问题"
 }

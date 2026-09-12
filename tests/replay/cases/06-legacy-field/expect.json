@@ -1,0 +1,5 @@
+{
+  "note": "文档写的是 user_prompt，二进制发的是 prompt。两个都要认——哪个版本发哪个，prompt 都必须落盘。",
+  "capture": { "exit_code": 0, "stdout": "inject" },
+  "state_file": { "decode": null, "promptField": "user_prompt", "prompt_startswith": "把这个目录下所有脚本" }
+}

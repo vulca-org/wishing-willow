@@ -79,7 +79,7 @@ if (!submit) {
   const input = JSON.stringify({
     session_id: SID,
     hook_event_name: 'UserPromptSubmit',
-    user_prompt: PROMPT,
+    prompt: PROMPT,
     cwd: REPO,
   });
 

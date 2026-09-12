@@ -86,6 +86,15 @@ whoever reads the file, from whether `decode` is empty. A status the hook could
 write is a status that could be wrong while the declaration is missing — which
 would restore exactly the silence this plugin exists to break.
 
+There is a third state, and it exists because of a real failure. The hook input
+field carrying your prompt is `prompt`. The documentation says `user_prompt`.
+This plugin was written from the documentation, so for its first day it ran on
+every turn, found no such field, exited 0, and captured nothing — and a plugin
+that silently does nothing looks exactly like a plugin reporting no problems.
+Both names are now accepted, and the record carries `promptField` naming the one
+that matched. `prompt` and `promptField` both null means **the hook could not
+read your input** — the reader says so instead of drawing a blank row.
+
 ## What it cannot do
 
 **It cannot tell whether the two rows actually agree.** That's semantic, and asking
@@ -115,15 +124,32 @@ and gets out of the way.
 ## Tests
 
 ```bash
-node tests/replay/run.mjs
+node tests/replay/run.mjs      # behaviour
+node tests/contract/run.mjs    # registration
+node tests/runtime/run.mjs     # field names
 ```
 
-Replays recorded turns through the hooks and checks the resulting state. Cases
-cover a real drift (declaration absent), a real aligned turn, two bypass paths,
-and malformed input. The bypass thresholds are calibrated against actual prompts —
-including the fact that a Chinese request carries roughly 2.5× the information of
-a Latin one at the same character count, so weighing characters directly gets it
-backwards.
+Three gates, because this plugin has now failed twice in ways a single gate
+structurally could not see.
+
+**replay** runs the hooks against recorded turns and checks the resulting state:
+a real drift (declaration absent), a real aligned turn, two bypass paths,
+malformed input, the legacy field name, and an unrecognised one. The bypass
+thresholds are calibrated against actual prompts — including the fact that a
+Chinese request carries roughly 2.5× the information of a Latin one at the same
+character count, so weighing characters directly gets it backwards.
+
+**contract** executes the command exactly as `hooks.json` spells it. Replay
+spawned the scripts directly, which meant `hooks.json` itself was never tested —
+and it was wrong: it used a `command` + `args` pair, `args` is not part of the
+schema, and the field was silently ignored. Every replay case stayed green while
+the plugin had never once run inside Claude Code.
+
+**runtime** reads the payload field names out of the installed `claude` binary
+and feeds the hook using *those* names. Fixtures written from the docs cannot
+catch the docs being wrong, because the code was written from the same page.
+With no `claude` on the machine it prints SKIP and counts it separately — a skip
+is not a pass.
 
 ## License
 

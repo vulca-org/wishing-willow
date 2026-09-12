@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from '
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {
@@ -34,6 +34,28 @@ export function parseInput(raw) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Pull the user's prompt out of the hook input, and say which key it came from.
+ *
+ * The field name is `prompt` — verified against the shipped Claude Code binary
+ * (2.1.252), not against the docs, which say `user_prompt`. Writing the code
+ * from the docs is how this plugin spent its first day capturing nothing at
+ * all: the hook ran, found no `user_prompt`, and exited 0 in silence.
+ *
+ * Both names are accepted so that whichever one a given build sends, the
+ * prompt still lands. Returning the key alongside the text lets the reader
+ * tell "the model declared nothing" apart from "we could not read the input" —
+ * two states that otherwise look identical, which is the failure this whole
+ * plugin exists to break.
+ */
+export function readPrompt(input) {
+  for (const field of ['prompt', 'user_prompt']) {
+    const v = input?.[field];
+    if (typeof v === 'string') return { text: v, field };
+  }
+  return { text: null, field: null };
 }
 
 /** A session id safe to use as a filename. */

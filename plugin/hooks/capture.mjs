@@ -6,7 +6,7 @@
 // so it does exactly two cheap things and then gets out of the way.
 
 import {
-  SCHEMA, readStdin, parseInput, readState, writeState, shouldBypass, quietExit,
+  SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, quietExit,
 } from './_willow.mjs';
 
 const REMINDER =
@@ -20,11 +20,17 @@ try {
   if (!input) quietExit();
 
   const sessionId = input.session_id;
-  const prompt = input.user_prompt;
-  if (typeof sessionId !== 'string' || typeof prompt !== 'string') quietExit();
+  if (typeof sessionId !== 'string') quietExit();
+
+  const { text: prompt, field: promptField } = readPrompt(input);
 
   // The prompt is written exactly as submitted. Nothing in this plugin — and
   // nothing the model can do — rewrites this field. That asymmetry is the point.
+  //
+  // When no prompt field matched, the record is still written, with both
+  // `prompt` and `promptField` null. That combination means "the hook ran and
+  // could not read this turn's input" — a broken plugin, not a quiet model —
+  // and the reader shows it as such instead of leaving the screen blank.
   const prev = readState(sessionId);
   writeState(sessionId, {
     schema: SCHEMA,
@@ -35,11 +41,12 @@ try {
     turnIndex: (prev?.turnIndex ?? -1) + 1,
     updatedAt: new Date().toISOString(),
     prompt,
+    promptField,
     decode: null,          // absence is the signal; extract.mjs fills it in
     endedAt: null,
   });
 
-  if (shouldBypass(prompt)) quietExit();
+  if (prompt === null || shouldBypass(prompt)) quietExit();
 
   // Must be complete, valid JSON: Claude Code treats output starting with '{'
   // but not ending in '}' as plain text.

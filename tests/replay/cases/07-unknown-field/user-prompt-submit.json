@@ -1,0 +1,8 @@
+{
+  "session_id": "test-sess-07",
+  "prompt_id": "00000000-0000-4000-8000-000000000007",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "user_prompt_raw": "一个本插件不认识的字段名——正是 2026-09-12 让它整天什么都没抓到的那种情况。"
+}

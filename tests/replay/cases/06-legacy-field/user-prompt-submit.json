@@ -1,0 +1,8 @@
+{
+  "session_id": "test-sess-06",
+  "prompt_id": "00000000-0000-4000-8000-000000000006",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "user_prompt": "把这个目录下所有脚本的错误处理都过一遍，告诉我哪些地方会静默失败，先不要改。"
+}

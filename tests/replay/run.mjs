@@ -117,16 +117,38 @@ for (const name of caseNames) {
           ok = check(name, 'state.decode', got === want,
             `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
         }
+        if ('prompt' in expect.state_file) {
+          const want = expect.state_file.prompt;
+          const got = state.prompt ?? null;
+          ok = check(name, 'state.prompt', got === want,
+            `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
+        }
+        if ('promptField' in expect.state_file) {
+          const want = expect.state_file.promptField;
+          const got = state.promptField ?? null;
+          ok = check(name, 'state.promptField', got === want,
+            `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
+        }
         if (expect.state_file.prompt_startswith) {
           const p = state.prompt ?? '';
           ok = check(name, 'state.prompt', p.startsWith(expect.state_file.prompt_startswith),
             `prompt 应以「${expect.state_file.prompt_startswith}」开头，得到「${p.slice(0, 30)}…」`) && ok;
         }
-        // prompt 必须逐字保存 —— A1 的核心，绝不允许被改写
-        const rawPrompt = existsSync(ups) ? (() => { try { return read(ups).user_prompt; } catch { return null; } })() : null;
+        // prompt 必须逐字保存 —— A1 的核心，绝不允许被改写。
+        // 原话从 fixture 实际用的那个键里取，不写死键名：写死键名正是
+        // 2026-09-12 那个 bug 能躲过整套测试的原因。
+        const rawPrompt = existsSync(ups) ? (() => {
+          try {
+            const raw = read(ups);
+            for (const f of ['prompt', 'user_prompt']) {
+              if (typeof raw[f] === 'string') return raw[f];
+            }
+          } catch { /* 畸形输入交给别的断言 */ }
+          return null;
+        })() : null;
         if (rawPrompt != null) {
           ok = check(name, 'state.prompt.verbatim', state.prompt === rawPrompt,
-            'prompt 必须与 user_prompt 逐字一致') && ok;
+            'prompt 必须与输入的原话逐字一致') && ok;
         }
       }
       marks.push(`state:${ok ? 'ok' : 'FAIL'}`);

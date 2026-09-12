@@ -77,6 +77,14 @@ function main() {
   const cols = Number(process.env.COLUMNS) || 100;
   const room = Math.max(20, cols - 14);
 
+  // `prompt` and `promptField` both null means capture ran and could not read
+  // this turn's input — the plugin is broken, not the model quiet. Say so
+  // instead of rendering a blank row that looks like an ordinary turn.
+  if (typeof state.prompt !== 'string' && state.promptField === null) {
+    process.stdout.write(`${WARN}⚠ willow 读不到本轮输入 · hook 字段名与此版本不符${RESET}`);
+    return;
+  }
+
   const asked = typeof state.prompt === 'string' && state.prompt.trim()
     ? truncate(state.prompt, room)
     : '—';
