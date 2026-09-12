@@ -4,9 +4,11 @@ import SwiftUI
 @Observable
 final class IslandState {
     var expanded = false
-    /// 黑色形状此刻该有的尺寸（含两侧凹肩）。窗口只是舞台（瞬间定大小、透明），形状在舞台里用 spring 变化。
-    /// 起因：录屏逐帧测过，NSPanel 的窗口尺寸动画根本没发生——宽度一步从 340 跳到 480，没有任何中间值。
-    var shapeSize: CGSize = .zero
+    /// 黑色形状此刻的宽和高（含两侧凹肩）。分开存，各走各的弹簧：展开时宽先长、高后长，
+    /// 读起来是从刘海往两边、再往下；收起反过来。窗口本身是固定大小的透明舞台。
+    var shapeWidth: CGFloat = 0
+    var shapeHeight: CGFloat = 0
+    var shapeSize: CGSize { CGSize(width: shapeWidth, height: shapeHeight) }
     /// 点击后的面板态：灵动岛再长大一档。
     var detail = false
     /// 声明到达、悬停或切换时的那个会话，展开期间钉住。
@@ -21,7 +23,6 @@ final class IslandState {
 /// 不是刘海长出来的东西 —— 这是用真实截图对照之后改的，不是凭审美。
 ///
 /// 并行会话按 Apple HIG 的多活动做法：主会话贴着摄像头占两翼，第二个会话分离成右侧的小胶囊。
-/// 收起时刘海正下方那一块什么都不画：那块是摄像头，画了也看不见。
 struct IslandView: View {
     let store: WillowStore
     let seen: SeenStore
@@ -36,6 +37,10 @@ struct IslandView: View {
     private var open: Bool { state.expanded || state.detail }
     private var radii: (top: CGFloat, bottom: CGFloat) { open ? NotchShape.open : NotchShape.closed }
 
+    /// 内容退场一律快速淡出：收起时先让字消失，形状再收回刘海。
+    private static let quickOut = AnyTransition.asymmetric(
+        insertion: .identity, removal: .opacity.animation(.easeOut(duration: 0.12)))
+
     var body: some View {
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
         let label = pair.primary.flatMap { FocusRule.label($0, seen, store) }
@@ -43,33 +48,37 @@ struct IslandView: View {
 
         ZStack(alignment: .top) {
             ZStack(alignment: .top) {
-                // 两翼缩回刘海时整块不画：物理刘海本身是黑的，再画一层只会在肩和圆角处漏出几个像素。
-                shape.fill(Color.black.opacity(open || label != nil ? 1 : 0))
+                // 缩回刘海时不能画成全透明：窗口里 alpha 为 0 的像素，鼠标事件直接穿过窗口，悬停永远到不了这里。
+                // 2026-09-12 真鼠标复现：两次悬停把会话都看过之后灵动岛缩回刘海，第三次悬停刘海，日志里没有 hover-in。
+                // 2% 的黑盖在物理刘海上看不见，但足够让窗口接住鼠标。
+                shape.fill(Color.black.opacity(open || label != nil ? 1 : 0.02))
 
                 if state.detail {
                     DetailView(store: store, seen: seen, notchWidth: notchWidth, notchHeight: notchHeight, onClose: onClose)
                         .frame(width: DetailView.size.width - 2 * NotchShape.open.top,
                                height: DetailView.size.height, alignment: .top)
-                        .transition(.opacity)
+                        .transition(Self.quickOut)
                 } else if state.expanded {
                     // 内容固定宽度，形状长大时被裁切着逐渐露出——不在长大过程中反复换行。
+                    // 各块自己按从上到下的次序长出来（Reveal），这里不再整体淡入。
                     IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
                                           notchWidth: notchWidth, notchHeight: notchHeight, onSwitch: onSwitch)
                         .frame(width: IslandController.expandedWidth, alignment: .topLeading)
-                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                        .transition(Self.quickOut)
                 } else if let f = pair.primary, let l = label {
                     CompactWings(store: store, seen: seen, session: f, label: l,
                                  notchWidth: notchWidth, height: notchHeight)
                         .padding(.horizontal, NotchShape.closed.top)
-                        .transition(.opacity)
+                        .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.22).delay(0.1)),
+                                                removal: .opacity.animation(.easeOut(duration: 0.1))))
                 }
             }
-            .frame(width: state.shapeSize.width, height: state.shapeSize.height, alignment: .top)
+            .frame(width: state.shapeWidth, height: state.shapeHeight, alignment: .top)
             .clipShape(shape)
             // 暗色背景上的一条细边：HIG 的 key line，黑岛压在深色壁纸上时靠它分出边界。
             .overlay { if open { shape.stroke(Color.white.opacity(0.08), lineWidth: 1) } }
             .shadow(color: .black.opacity(open ? 0.7 : 0), radius: 6)
-            // 悬停与点击只挂在形状上：舞台在过渡期间比形状大，那片透明边缘不该触发任何事。
+            // 悬停与点击只挂在形状上：舞台比形状大，那片透明边缘不该触发任何事。
             .contentShape(shape)
             .onHover(perform: onHover)
             .onTapGesture { if !state.detail { onClick() } }   // 面板里的点击交给面板自己
@@ -81,9 +90,13 @@ struct IslandView: View {
                     .background(Capsule().fill(Color.black))
                     .contentShape(Capsule())
                     .onTapGesture { onSwitch(other.id) }
-                    .offset(x: state.shapeSize.width / 2 + IslandController.pillGap + state.pillWidth / 2,
-                            y: (notchHeight - IslandController.pillHeight) / 2)
-                    .transition(.scale(scale: 0.3, anchor: .leading).combined(with: .opacity))
+                    // 用布局把胶囊推到右边，不用 offset：居中的一整段宽 = 左内边距 + 胶囊，
+                    // 胶囊中心 = 舞台中心 + 内边距 / 2 = 形状右缘 + 间隙 + 胶囊半宽。点击区与画出来的位置同一处。
+                    .padding(.leading, state.shapeWidth + 2 * IslandController.pillGap + state.pillWidth)
+                    .padding(.top, (notchHeight - IslandController.pillHeight) / 2)
+                    // 退场快速淡出：先前缩放退场与正在长大的形状叠在一起，录屏第 52–53 帧右缘多出 130px。
+                    .transition(.asymmetric(insertion: .scale(scale: 0.3, anchor: .leading).combined(with: .opacity),
+                                            removal: .opacity.animation(.easeOut(duration: 0.08))))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -120,9 +133,9 @@ struct CompactWings: View {
                                      : Color.white.opacity(label.carried ? 0.55 : 1))
                     .lineLimit(1)
                     .id(label.text)
-                    // 旧的字朝刘海方向退回去，新的字从外侧进来——撤回时看得出是「收回」。
-                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
-                                            removal: .move(edge: .leading).combined(with: .opacity)))
+                    // 换标签时旧字往上退、新字从下面升上来——竖向，和展开的方向一致。
+                    .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
+                                            removal: .move(edge: .top).combined(with: .opacity)))
                 Spacer(minLength: 0)
             }
             // 6 个汉字在 12pt semibold 约 72pt。翼宽 92 − 9 − 8 = 75，放得下也不贴圆角。
@@ -183,7 +196,7 @@ struct StatusGlyph: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color.red)
         } else {
-            // 结束了的一轮：点 + 声明躺了多久。这正是这个产品要缩短的那个数。
+            // 结束了的一轮：点 + 声明躺了多久。
             HStack(spacing: 5) {
                 Circle().fill(tint(f)).frame(width: 7, height: 7)
                 // 旧记录没有 turnEndedAt；提取时 updatedAt 与结束时刻同时写下，退回它。
@@ -250,8 +263,9 @@ struct SessionPill: View {
 
 /// 展开态的内容，单独成一个视图：控制器要先量出它的真实高度再定形状大小。
 ///
-/// 按 HIG「展开态是放大的收起态」：刘海两侧的耳朵放收起态的同一组信息（左状态、右标签），
-/// 下面才是「你批准的 / 我读成了」，页脚是第二个会话（点一下切过去）。
+/// 按图纸的画法排：刘海两侧的耳朵放收起态的同一组信息；下面三节带引出编号，因为它们真的有先后——
+/// ① 你批准的 → ② 我读成了 → ③ 模型在做的。每节标题后面一条引线，引到右侧一个可以核对的数
+/// （回车时刻、声明写出的偏移、步数与首次落盘）。第 ③ 节是这一轮的时间刻度尺。底部是图签。
 struct IslandExpandedContent: View {
     let store: WillowStore
     let seen: SeenStore
@@ -260,33 +274,33 @@ struct IslandExpandedContent: View {
     var notchHeight: CGFloat = 32
     var onSwitch: ((String) -> Void)? = nil
 
+    @State private var shown = Offscreen.isRendering
+
     var body: some View {
         let pair = FocusRule.pair(store, seen, pinned: pinned)
         VStack(alignment: .leading, spacing: 0) {
-            ears(pair.primary)
-            VStack(alignment: .leading, spacing: 10) {
-                if let s = pair.primary {
-                    if s.record.isSystemMessage {
-                        // 不是人说的话，不能挂在「你批准的」下面。
-                        row("这一轮", "系统消息（\(PromptSource.describe(s.prompt))），不是你说的", Color.white.opacity(0.55))
-                    } else {
-                        row("你批准的", s.prompt ?? "—", Color.white)
-                    }
-                    decodeRow(s)
-                        .id(String(describing: s.declaration))
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    footer(s, pair.secondary)
-                } else {
-                    Text("没有活动的会话")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.white.opacity(0.55))
+            ears(pair.primary).reveal(0, shown)
+            if let s = pair.primary {
+                let timeline = store.timeline(for: s)
+                VStack(alignment: .leading, spacing: 11) {
+                    approved(s, timeline).reveal(1, shown)
+                    decoded(s, timeline).reveal(2, shown)
+                    if let timeline { working(timeline).reveal(3, shown) }
+                    titleBlock(s, pair.secondary).reveal(4, shown)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
+            } else {
+                Text("没有活动的会话")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Ink.secondary)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .reveal(1, shown)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { DispatchQueue.main.async { shown = true } }
     }
 
     // 刘海两侧：左耳 = 工作区 … 状态（贴摄像头），右耳 = 标签（贴摄像头）… 阶段。
@@ -296,7 +310,7 @@ struct IslandExpandedContent: View {
                 if let s {
                     Text(s.workspace)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.42))
+                        .foregroundStyle(Ink.note)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     StatusGlyph(store: store, seen: seen, session: s)
@@ -317,8 +331,8 @@ struct IslandExpandedContent: View {
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(phaseWord(s))
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.42))
+                        .font(Ink.mono(9.5))
+                        .foregroundStyle(Ink.note)
                         .lineLimit(1)
                 } else {
                     Spacer(minLength: 0)
@@ -353,81 +367,214 @@ struct IslandExpandedContent: View {
         }
     }
 
-    private func row(_ label: String, _ text: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.45))
-            Text(text)
-                .font(.system(size: 13.5))
-                .foregroundStyle(color)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+    // MARK: ① 你批准的
+
+    private func approved(_ s: SessionState, _ tl: TurnTimeline?) -> some View {
+        let system = s.record.isSystemMessage
+        let start = tl?.startedAt ?? (s.declaration == .inProgress ? s.record.updatedAt : nil)
+        let note = [start.map { Self.clock($0) + " 回车" }, system ? nil : s.prompt.map { "\($0.count) 字" }]
+            .compactMap { $0 }.joined(separator: " · ")
+        return VStack(alignment: .leading, spacing: 4) {
+            SectionHeader(number: 1, title: system ? "这一轮" : "你批准的", note: note.isEmpty ? nil : note)
+            // 不是人说的话，不能挂在「你批准的」下面。
+            para(system ? "系统消息（\(PromptSource.describe(s.prompt))），不是你说的" : (s.prompt ?? "—"),
+                 system ? Ink.secondary : Ink.primary)
         }
     }
+
+    // MARK: ② 我读成了
 
     /// 「没问」「问了没答」「插件坏了」必须是三句不同的话。
     @ViewBuilder
-    private func decodeRow(_ s: SessionState) -> some View {
-        switch s.declaration {
-        case .declared(let d):
-            row("我读成了", d, s.flaggedByModel ? .orange : .white)
-        case .undeclared:
-            row("我读成了", "问了，模型没写声明", .orange)
-        case .unreadable:
-            row("我读成了", "读不到本轮输入 —— 插件坏了，不是模型没说话", .red)
-        case .awaiting:
-            row("我读成了", "等这一轮开始", Color.white.opacity(0.5))
-        case .notAsked:
-            row("我读成了", "这一轮没问（太短或是系统消息）", Color.white.opacity(0.5))
-        case .interrupted, .inProgress:
-            // 假进度条去掉了——它暗示一个并不存在的完成度。这里只放真的在发生的事。
-            LiveTurnSection(started: s.record.updatedAt, progress: store.progress(for: s))
+    private func decoded(_ s: SessionState, _ tl: TurnTimeline?) -> some View {
+        let p = store.progress(for: s)
+        VStack(alignment: .leading, spacing: 4) {
+            switch s.declaration {
+            case .declared(let d):
+                SectionHeader(number: 2, title: "我读成了", note: declaredNote(s, tl),
+                              noteTint: s.flaggedByModel ? .orange : Ink.note)
+                para(d, s.flaggedByModel ? .orange : Ink.primary)
+            case .undeclared:
+                SectionHeader(number: 2, title: "我读成了", note: "已结束 · 没有声明", noteTint: .orange)
+                para("问了，模型没写声明", .orange)
+            case .unreadable:
+                SectionHeader(number: 2, title: "我读成了", note: "插件读不到输入", noteTint: .red)
+                para("读不到本轮输入 —— 插件坏了，不是模型没说话", .red)
+            case .awaiting:
+                SectionHeader(number: 2, title: "我读成了", note: "等待开始")
+                para("等这一轮开始", Ink.note)
+            case .notAsked:
+                SectionHeader(number: 2, title: "我读成了", note: "这一轮没问")
+                para("这一轮没问（太短或是系统消息）", Ink.note)
+            case .interrupted:
+                SectionHeader(number: 2, title: "我读成了", note: offsetNote(p?.interruptedAt, tl).map { "撤回于 " + $0 })
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Ink.secondary)
+                    Text("你撤回了这一轮").font(.system(size: 13.5, weight: .medium)).foregroundStyle(Ink.primary)
+                }
+                .padding(.leading, 20)
+                if let d = p?.decode { para("撤回前读成了：" + d, Ink.note) }
+            case .inProgress:
+                if let d = p?.decode {
+                    SectionHeader(number: 2, title: "我读成了", note: offsetNote(p?.declaredAt, tl).map { $0 + " 写出" },
+                                  badge: "实时")
+                    para(d, d.hasPrefix("⚠") ? .orange : Ink.primary)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                } else {
+                    SectionHeader(number: 2, title: "我读成了", note: "还没写出")
+                    HStack(spacing: 6) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Ink.secondary)
+                            .symbolEffect(.pulse, options: .repeating)
+                        Text(Self.phase(p)).font(.system(size: 13)).foregroundStyle(Ink.secondary)
+                        Spacer(minLength: 0)
+                        if let start = s.record.updatedAt { LiveClock(since: start, size: 11.5, opacity: 0.5) }
+                    }
+                    .padding(.leading, 20)
+                }
+            }
         }
+        .animation(.easeOut(duration: 0.3), value: p?.decode)
     }
 
-    /// 页脚：有第二个会话就放它（点一下切过去）；否则说清楚其余会话的状况。
+    private func declaredNote(_ s: SessionState, _ tl: TurnTimeline?) -> String {
+        var parts: [String] = []
+        if let at = offsetNote(tl?.progress.declaredAt, tl) { parts.append(at + " 写出") }
+        parts.append(s.flaggedByModel ? "⚠ 模型自标不一致" : "已结束")
+        return parts.joined(separator: " · ")
+    }
+
+    private func offsetNote(_ d: Date?, _ tl: TurnTimeline?) -> String? {
+        guard let d, let start = tl?.startedAt else { return nil }
+        return "+" + Clock.text(d.timeIntervalSince(start))
+    }
+
+    // MARK: ③ 在做 / 做了
+
+    private func working(_ tl: TurnTimeline) -> some View {
+        let p = tl.progress
+        let live = tl.endedAt == nil && p.interruptedAt == nil
+        var note = ["\(p.steps.count) 步"]
+        if let first = p.firstWriteAt { note.append("首次落盘 +" + Clock.text(first.timeIntervalSince(tl.startedAt))) }
+        return VStack(alignment: .leading, spacing: 6) {
+            SectionHeader(number: 3, title: live ? "在做" : "做了", note: note.joined(separator: " · "))
+            VStack(alignment: .leading, spacing: 6) {
+                if live, let c = p.pendingChoice {
+                    ChoiceCard(choice: c)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                }
+                TimelineRuler(timeline: tl)
+                if !(live && p.pendingChoice != nil), !p.steps.isEmpty {
+                    StepList(timeline: tl, limit: 2)
+                }
+            }
+            .padding(.leading, 20)
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: p.pendingChoice)
+        .animation(.easeOut(duration: 0.25), value: p.steps.count)
+    }
+
+    // MARK: 图签
+
+    /// 图签：工作区 / 会话 / 本会话写了声明的轮数 / 另一个会话（点一下切过去）。
+    private func titleBlock(_ s: SessionState, _ other: SessionState?) -> some View {
+        let log = TurnLog.read(sessionId: s.id, directory: store.directory)
+        let asked = log.filter { $0.reminded == true && $0.interrupted != true }
+        let wrote = asked.filter(\.declared).count
+        return HStack(spacing: 0) {
+            TitleCell(label: "工作区", value: s.workspace).frame(width: 112, alignment: .leading)
+            TitleRule()
+            TitleCell(label: "会话", value: String(s.id.prefix(8)), mono: true).frame(width: 84, alignment: .leading)
+            TitleRule()
+            TitleCell(label: "写了声明", value: asked.isEmpty ? "—" : "\(wrote)/\(asked.count) 轮").frame(width: 74, alignment: .leading)
+            TitleRule()
+            otherCell(s, other).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .frame(height: 34)
+        .overlay(Rectangle().stroke(Ink.rule, lineWidth: Ink.hair))
+        .overlay(CornerMarks(length: 5).stroke(Ink.secondary, lineWidth: 0.75))
+    }
+
     @ViewBuilder
-    private func footer(_ s: SessionState, _ other: SessionState?) -> some View {
+    private func otherCell(_ s: SessionState, _ other: SessionState?) -> some View {
         if let other, let pill = FocusRule.pill(other, seen, store) {
             Button { onSwitch?(other.id) } label: {
-                HStack(spacing: 8) {
-                    SessionPill(pill: pill, extra: 0)
+                HStack(spacing: 6) {
+                    TitleCell(label: "另一会话 · 点击切换",
+                              value: other.tag ?? FocusRule.lastLoggedTag(other, store) ?? other.workspace)
+                    Spacer(minLength: 0)
+                    SessionPill(pill: pill, extra: FocusRule.extra(store, primary: s, secondary: other))
                         .padding(.vertical, 3)
                         .background(Capsule().fill(Color.white.opacity(0.1)))
-                    Text(other.tag ?? FocusRule.lastLoggedTag(other, store) ?? "还没有标签")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.88))
-                        .lineLimit(1)
-                    Text(other.workspace)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Color.white.opacity(0.38))
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    let more = FocusRule.extra(store, primary: s, secondary: other)
-                    if more > 0 {
-                        Text("另有 \(more) 个").font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.38))
-                    }
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.55))
+                        .padding(.trailing, 6)
                 }
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                // 同心圆角：外框下角 24、内缩 12 → 内框 12。
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
-            HStack(spacing: 6) {
-                let n = FocusRule.others(store)
-                Text(n > 0 ? "另有 \(n) 个会话，暂时没有新东西" : "只有这一个会话在跑")
-                Spacer(minLength: 0)
-                Text("点击看历史")
+            let n = FocusRule.others(store)
+            TitleCell(label: "其余会话 · 点击看历史", value: n > 0 ? "\(n) 个，暂时没有新东西" : "只有这一个在跑",
+                      valueTint: Ink.secondary)
+        }
+    }
+
+    // MARK: 小件
+
+    private func para(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 13.5))
+            .foregroundStyle(color)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 20)                       // 与编号后的标题对齐：悬挂缩进
+    }
+
+    static func phase(_ p: TurnProgress?) -> String {
+        guard let p else { return "模型正在回答" }
+        if p.firstWriteAt == nil { return "思考中" }
+        return p.steps.isEmpty ? "开始回答，还没写出声明" : "在执行，还没写出声明"
+    }
+
+    static func clock(_ d: Date) -> String {
+        d.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+    }
+}
+
+/// 最近几步：左边一列等宽的时间偏移，像施工日志；最新一步亮，其余暗。
+struct StepList: View {
+    let timeline: TurnTimeline
+    var limit = 2
+
+    var body: some View {
+        let steps = timeline.progress.steps
+        let recent = Array(steps.suffix(limit))
+        let live = timeline.endedAt == nil && timeline.progress.interruptedAt == nil
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(recent.enumerated()), id: \.offset) { i, st in
+                let current = live && i == recent.count - 1
+                HStack(spacing: 6) {
+                    Text(st.at.map { "+" + Clock.text($0.timeIntervalSince(timeline.startedAt)) } ?? "")
+                        .font(Ink.mono(9.5))
+                        .foregroundStyle(Ink.note)
+                        .frame(width: 42, alignment: .trailing)
+                    Rectangle()
+                        .fill(current ? Color.white.opacity(0.9) : Ink.faint)
+                        .frame(width: 6, height: 0.75)
+                    Text(st.text)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(current ? Color.white.opacity(0.88) : Ink.note)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if i == 0, steps.count > recent.count {
+                        Text("最近 \(recent.count) / 共 \(steps.count)")
+                            .font(Ink.mono(9))
+                            .foregroundStyle(Ink.faint)
+                    }
+                }
             }
-            .font(.system(size: 10.5))
-            .foregroundStyle(Color.white.opacity(0.4))
-            .lineLimit(1)
         }
     }
 }
@@ -466,106 +613,6 @@ struct LiveClock: View {
     }
 }
 
-/// 进行中这一轮的实时区块：阶段 + 计时，声明写出后换成声明（标「实时」），下面是最近三个真实步骤。
-///
-/// 阶段只说读得到的事实：还没落盘就是在思考（思考块没有文字，读不到想了什么）；
-/// 开始落盘还没声明；声明写出。步骤来自工具调用，时间是距按回车的偏移。
-struct LiveTurnSection: View {
-    let started: Date?
-    let progress: TurnProgress?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let cut = progress?.interruptedAt {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.75))
-                    Text("你撤回了这一轮").font(.system(size: 13.5, weight: .medium))
-                    Spacer(minLength: 0)
-                    if let started {
-                        Text("跑了 " + Clock.text(cut.timeIntervalSince(started)))
-                            .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(Color.white.opacity(0.45))
-                    }
-                }
-                .foregroundStyle(Color.white)
-                if let d = progress?.decode {
-                    Text("撤回前读成了：" + d)
-                        .font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.45)).lineLimit(2)
-                }
-            } else if let d = progress?.decode {
-                HStack(spacing: 6) {
-                    Text("我读成了").font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.white.opacity(0.45))
-                    Text("实时")
-                        .font(.system(size: 9, weight: .semibold))
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Color.white.opacity(0.14), in: Capsule())
-                        .foregroundStyle(Color.white.opacity(0.8))
-                }
-                Text(d)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(d.hasPrefix("⚠") ? Color.orange : Color.white)
-                    .lineLimit(2)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else {
-                Text("我读成了").font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.white.opacity(0.45))
-                HStack(spacing: 6) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.6))
-                        .symbolEffect(.pulse, options: .repeating)
-                    Text(phase).font(.system(size: 13)).foregroundStyle(Color.white.opacity(0.6))
-                    Spacer(minLength: 0)
-                    if let started { LiveClock(since: started, size: 11.5, opacity: 0.5) }
-                }
-            }
-            if let c = progress?.pendingChoice, progress?.interruptedAt == nil {
-                // 在等你选的时候，步骤不是重点：换成题面与选项。
-                ChoiceCard(choice: c)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            } else if let steps = progress?.steps, !steps.isEmpty {
-                let recent = Array(steps.suffix(3))
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(recent.enumerated()), id: \.offset) { i, st in
-                        let current = i == recent.count - 1 && progress?.interruptedAt == nil
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color.white.opacity(current ? 0.9 : 0.28))
-                                .frame(width: 5, height: 5)
-                            Text(st.text)
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Color.white.opacity(current ? 0.85 : 0.4))
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            if let at = st.at, let started {
-                                Text("+" + Clock.text(at.timeIntervalSince(started)))
-                                    .font(.system(size: 10, design: .rounded)).monospacedDigit()
-                                    .foregroundStyle(Color.white.opacity(0.3))
-                            }
-                        }
-                    }
-                    if steps.count > 3 {
-                        Text("共 \(steps.count) 步")
-                            .font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.3))
-                    }
-                }
-                .padding(.top, 2)
-            }
-        }
-        .animation(.easeOut(duration: 0.3), value: progress?.decode)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: progress?.interruptedAt)
-        .animation(.easeOut(duration: 0.25), value: progress?.steps.count)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: progress?.pendingChoice)
-    }
-
-    private var phase: String {
-        guard let p = progress else { return "模型正在回答" }
-        if p.firstWriteAt == nil { return "思考中" }
-        return p.steps.isEmpty ? "开始回答，还没写出声明" : "在执行，还没写出声明"
-    }
-}
-
 /// 模型在等你选：题面与选项。灵动岛没法往 Claude Code 里输入，不替你选，只负责把你叫回去。
 /// 颜色另起一个蓝：橙色是「读偏了」、红色是「插件坏了」，而「轮到你了」不是任何一种错误。
 struct ChoiceCard: View {
@@ -583,7 +630,7 @@ struct ChoiceCard: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Color.white)
                 if choice.count > 1 {
-                    Text("共 \(choice.count) 题").font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.45))
+                    Text("共 \(choice.count) 题").font(Ink.mono(9.5)).foregroundStyle(Ink.note)
                 }
                 Spacer(minLength: 0)
                 if let at = choice.at { LiveClock(since: at, size: 11, opacity: 0.55) }
@@ -593,16 +640,21 @@ struct ChoiceCard: View {
             }
             if !choice.options.isEmpty {
                 HStack(spacing: 5) {
-                    ForEach(Array(choice.options.prefix(4).enumerated()), id: \.offset) { _, o in
-                        Text(o)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                            .lineLimit(1)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                    ForEach(Array(choice.options.prefix(4).enumerated()), id: \.offset) { i, o in
+                        HStack(spacing: 4) {
+                            Text(String(UnicodeScalar(UInt8(65 + i))))
+                                .font(Ink.mono(9, .semibold))
+                                .foregroundStyle(Self.accent)
+                            Text(o)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .overlay(Capsule().stroke(Self.accent.opacity(0.35), lineWidth: Ink.hair))
                     }
                     if choice.options.count > 4 {
-                        Text("+\(choice.options.count - 4)").font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.45))
+                        Text("+\(choice.options.count - 4)").font(Ink.mono(9.5)).foregroundStyle(Ink.note)
                     }
                 }
             }
@@ -612,7 +664,8 @@ struct ChoiceCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Self.accent.opacity(0.1)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Self.accent.opacity(0.28), lineWidth: 0.5))
+        .background(Rectangle().fill(Self.accent.opacity(0.08)))
+        .overlay(Rectangle().stroke(Self.accent.opacity(0.28), lineWidth: Ink.hair))
+        .overlay(CornerMarks(length: 6).stroke(Self.accent, lineWidth: 1))
     }
 }

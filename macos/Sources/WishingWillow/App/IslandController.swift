@@ -10,6 +10,9 @@ import SwiftUI
 ///
 /// 冲突的处理：boring.notch、Alcove、NotchNook 也在这一层盖同一块矩形，系统不仲裁。
 /// 检测到它们在跑，就**不抢那块矩形**，改挂在刘海正下方。检测是按名字的启发式，写明白。
+///
+/// 窗口是固定大小的透明舞台。**不要设置 `ignoresMouseEvents`**：保持默认时，窗口里 alpha 为 0 的像素
+/// 让鼠标事件穿过去，舞台的透明部分不挡菜单栏；显式设成 false 会让整块舞台吞掉点击。
 final class IslandPanel: NSPanel {
     init() {
         super.init(contentRect: .zero,
@@ -37,7 +40,6 @@ final class IslandController {
     private let panel = IslandPanel()
     private var autoCollapse: Timer?
     private var hoverIntent: DispatchWorkItem?
-    private var stageShrink: DispatchWorkItem?
     private var arrivals = ArrivalQueue()
     private var outsideMonitor: Any?
 
@@ -45,13 +47,19 @@ final class IslandController {
 
     static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 72pt 算
     static let expandedWidth: CGFloat = 500     // 内容宽；形状再加两侧凹肩
+    static let maxExpandedHeight: CGFloat = 400
     static let pillHeight: CGFloat = 24
     static let pillGap: CGFloat = 6
+    static let pillMax: CGFloat = 96
     static let shadowPad: CGFloat = 14
 
-    // 弹簧参数取自 boring.notch 源码：打开 (0.42, 0.8)、收起 (0.45, 1.0) 不回弹、内容挪位 (0.38, 0.8)。
-    static let openSpring = Animation.spring(response: 0.42, dampingFraction: 0.8)
-    static let closeSpring = Animation.spring(response: 0.45, dampingFraction: 1.0)
+    // 弹簧参数的基准取自 boring.notch 源码：打开 (0.42, 0.8)、收起 (0.45, 1.0) 不回弹、内容挪位 (0.38, 0.8)。
+    // 用户要「从上到下、由内向外」：宽和高拆开走——展开时宽先到（从刘海向两边），高后到（往下长）；
+    // 收起反过来，高先收回、宽再收进刘海。
+    static let openWidth = Animation.spring(response: 0.34, dampingFraction: 0.84)
+    static let openHeight = Animation.spring(response: 0.5, dampingFraction: 0.84)
+    static let closeHeight = Animation.spring(response: 0.3, dampingFraction: 1.0)
+    static let closeWidth = Animation.spring(response: 0.45, dampingFraction: 1.0)
     static let moveSpring = Animation.spring(response: 0.38, dampingFraction: 0.8)
     /// 悬停要停够这么久才展开（boring.notch 的 minimumHoverDuration）：鼠标只是去点菜单栏时路过，不弹。
     static let hoverDelay: TimeInterval = 0.3
@@ -81,13 +89,17 @@ final class IslandController {
         store.onWithdraw = { [weak self] s, kind in self?.withdraw(kind, pinning: s.id) }
         store.onChoiceArrived = { [weak self] s in self?.arrive(s.id, reason: "choice-arrived") }
         store.start()
-        morph(to: targetShapeSize(expanded: false), animated: false, spring: Self.moveSpring)
+        placeStage()
+        morph(to: targetShapeSize(expanded: false), .move, animated: false)
         panel.orderFrontRegardless()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.layout(animated: false) }
+            MainActor.assumeIsolated {
+                self?.placeStage()
+                self?.layout(animated: false)
+            }
         }
     }
 
@@ -121,7 +133,7 @@ final class IslandController {
                       height: g.height)
     }
 
-    /// 第二个会话的胶囊宽度。只在收起态出现：展开后它挪进页脚。
+    /// 第二个会话的胶囊宽度。只在收起态出现：展开后它挪进图签。
     private func pillWidth() -> CGFloat {
         guard !state.expanded, !state.detail else { return 0 }
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
@@ -129,25 +141,28 @@ final class IslandController {
         return 76 + (FocusRule.extra(store, primary: pair.primary, secondary: other) > 0 ? 20 : 0)
     }
 
-    /// 舞台尺寸：形状居中，胶囊挂右侧，所以两侧对称地留出胶囊的位置；比刘海高的形状再留出阴影。
-    private func stageSize(_ shape: CGSize, pill: CGFloat) -> CGSize {
-        let pad = shape.height > notchGeometry().height + 1 ? Self.shadowPad : 0
-        let side = pill > 0 ? Self.pillGap + pill : 0
-        return CGSize(width: shape.width + 2 * max(pad, side), height: shape.height + pad)
+    /// 舞台固定大小：装得下点击面板、最高的展开态、带胶囊的收起态，外加阴影。
+    ///
+    /// 先前舞台跟着形状改尺寸。录屏逐帧量展开时宽度 690→816→787→779→814，不是单调长大；
+    /// 推断是窗口变大那一帧旧画面贴在新窗口左下角，形状先偏左再弹回中间——用户看到的「从左到右出现」。
+    /// 固定舞台后形状只在 SwiftUI 里居中长大，没有窗口尺寸变化这一步。
+    private func stageSize() -> CGSize {
+        let g = notchGeometry()
+        let compactWithPill = g.width + Self.wing * 2 + 2 * NotchShape.closed.top + 2 * (Self.pillGap + Self.pillMax)
+        let w = max(DetailView.size.width, Self.expandedWidth + 2 * NotchShape.open.top, compactWithPill) + 2 * Self.shadowPad
+        let h = max(DetailView.size.height, Self.maxExpandedHeight) + Self.shadowPad
+        return CGSize(width: ceil(w), height: ceil(h))
     }
 
-    /// 把舞台（窗口）瞬间放到这个尺寸，贴着刘海居中。舞台透明，不画任何东西。
-    private func placeStage(_ size: CGSize) {
+    /// 把舞台放到刘海正下方居中。只在启动和屏幕变化时调用。
+    private func placeStage() {
         guard let s = screen() else { return }
         let g = notchGeometry()
+        let size = stageSize()
         let drop: CGFloat = yielding ? g.height + 6 : 0      // 让路：挂到刘海下方
-        let rect = NSRect(x: g.midX - size.width / 2,
-                          y: s.frame.maxY - drop - size.height,
+        let rect = NSRect(x: g.midX - size.width / 2, y: s.frame.maxY - drop - size.height,
                           width: size.width, height: size.height)
-        let f = panel.frame
-        if abs(f.minX - rect.minX) < 0.5, abs(f.minY - rect.minY) < 0.5,
-           abs(f.width - rect.width) < 0.5, abs(f.height - rect.height) < 0.5 { return }
-        panel.setFrame(rect, display: true)
+        if panel.frame != rect { panel.setFrame(rect, display: true) }
     }
 
     /// 黑色形状此刻在屏幕上的矩形。悬停与点外面的判断用它，不用舞台——舞台比形状大。
@@ -155,44 +170,41 @@ final class IslandController {
         guard let s = screen() else { return .zero }
         let g = notchGeometry()
         let drop: CGFloat = yielding ? g.height + 6 : 0
-        let sz = state.shapeSize
-        return NSRect(x: g.midX - sz.width / 2, y: s.frame.maxY - drop - sz.height,
-                      width: sz.width, height: sz.height)
+        return NSRect(x: g.midX - state.shapeWidth / 2, y: s.frame.maxY - drop - state.shapeHeight,
+                      width: state.shapeWidth, height: state.shapeHeight)
     }
 
-    /// 形状变到 target：舞台先撑到「现在与目标的较大者」，形状 spring 过去；
-    /// 若是变小，等动画结束再把舞台缩回，否则形状会被窗口边裁掉。
-    private func morph(to target: CGSize, animated: Bool, spring: Animation) {
-        stageShrink?.cancel()
+    private enum Motion { case open, close, move }
+
+    /// 形状变到 target。宽、高、胶囊各自一个动画事务。
+    private func morph(to target: CGSize, _ motion: Motion, animated: Bool = true) {
         let pill = pillWidth()
         guard animated else {
-            state.shapeSize = target
+            state.shapeWidth = target.width
+            state.shapeHeight = target.height
             state.pillWidth = pill
-            placeStage(stageSize(target, pill: pill))
             return
         }
-        let nowStage = stageSize(state.shapeSize, pill: state.pillWidth)
-        let nextStage = stageSize(target, pill: pill)
-        placeStage(CGSize(width: max(nowStage.width, nextStage.width),
-                          height: max(nowStage.height, nextStage.height)))
-        withAnimation(spring) {
-            state.shapeSize = target
-            state.pillWidth = pill
-        }
-        if nextStage.width < nowStage.width || nextStage.height < nowStage.height {
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.placeStage(self.stageSize(self.state.shapeSize, pill: self.state.pillWidth))
+        switch motion {
+        case .open:
+            withAnimation(Self.openWidth) { state.shapeWidth = target.width; state.pillWidth = pill }
+            withAnimation(Self.openHeight) { state.shapeHeight = target.height }
+        case .close:
+            withAnimation(Self.closeHeight) { state.shapeHeight = target.height }
+            withAnimation(Self.closeWidth) { state.shapeWidth = target.width; state.pillWidth = pill }
+        case .move:
+            withAnimation(Self.moveSpring) {
+                state.shapeWidth = target.width
+                state.shapeHeight = target.height
+                state.pillWidth = pill
             }
-            stageShrink = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
         }
     }
 
     private func layout(animated: Bool) {
         let target = targetShapeSize(expanded: state.expanded)
         if animated && state.shapeSize == target && state.pillWidth == pillWidth() { return }
-        morph(to: target, animated: animated, spring: Self.moveSpring)
+        morph(to: target, .move, animated: animated)
     }
 
     /// 按内容量出展开高度，上下限兜住极端情况。
@@ -203,7 +215,7 @@ final class IslandController {
                                   notchWidth: g.width, notchHeight: g.height)
                 .frame(width: Self.expandedWidth))
         let fit = probe.sizeThatFits(in: CGSize(width: Self.expandedWidth, height: 10_000))
-        return max(72, min(340, ceil(fit.height)))
+        return max(72, min(Self.maxExpandedHeight, ceil(fit.height)))
     }
 
     // MARK: 交互
@@ -237,7 +249,9 @@ final class IslandController {
             // 展开时形状在鼠标下面变大，会误报一次「离开」。等一拍再看鼠标还在不在形状里。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self else { return }
-                if !self.shapeScreenRect().contains(NSEvent.mouseLocation) { self.setExpanded(false, reason: "hover-out") }
+                if !self.shapeScreenRect().insetBy(dx: -1, dy: -1).contains(NSEvent.mouseLocation) {
+                    self.setExpanded(false, reason: "hover-out")
+                }
             }
         }
     }
@@ -247,6 +261,13 @@ final class IslandController {
         if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored \(reason)"); return }
         if state.detail { return }
         let showing = state.expanded ? state.pinned : nil
+        // 正在展示的就是这个会话（例如声明之后又弹出选择题）：当场刷新、重置计时，不走排队。
+        // 先前这里记成「queued X behind X」，实际既没排队也没刷新。
+        if showing == id {
+            demoLog("refresh \(id.prefix(8)) reason=\(reason)")
+            flash(pinning: id, reason: reason)
+            return
+        }
         if arrivals.offer(id, showing: showing) {
             flash(pinning: id, reason: reason)
         } else {
@@ -260,7 +281,7 @@ final class IslandController {
         if state.detail { return }
         state.pinned = id
         if state.expanded {
-            morph(to: targetShapeSize(expanded: true), animated: true, spring: Self.moveSpring)
+            morph(to: targetShapeSize(expanded: true), .move)
         } else {
             setExpanded(true, reason: reason)
         }
@@ -273,7 +294,7 @@ final class IslandController {
         }
     }
 
-    /// 页脚或胶囊：切到那个会话并展开。这是你主动点的，算看过。
+    /// 图签或胶囊：切到那个会话并展开。这是你主动点的，算看过。
     private func switchTo(_ id: String) {
         guard let s = store.sessions.first(where: { $0.id == id }) else { return }
         demoLog("switch \(id.prefix(8))")
@@ -281,7 +302,7 @@ final class IslandController {
         seen.markSeen(s)
         if state.expanded {
             withAnimation(Self.moveSpring) { state.pinned = id }
-            morph(to: targetShapeSize(expanded: true), animated: true, spring: Self.moveSpring)
+            morph(to: targetShapeSize(expanded: true), .move)
         } else {
             state.pinned = id
             setExpanded(true, reason: "pill")
@@ -308,9 +329,8 @@ final class IslandController {
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
         if !on { afterCollapse(pin: state.pinned) }
-        let spring = on ? Self.openSpring : Self.closeSpring
-        withAnimation(spring) { state.expanded = on }
-        morph(to: targetShapeSize(expanded: on), animated: true, spring: spring)
+        withAnimation(on ? Self.openWidth : Self.closeHeight) { state.expanded = on }
+        morph(to: targetShapeSize(expanded: on), on ? .open : .close)
     }
 
     /// 收起动画走完之后：松开钉住（立刻松开的话，收起途中内容会跳成另一个会话），再轮到排队的下一个。
@@ -339,8 +359,8 @@ final class IslandController {
         hoverIntent?.cancel()
         for s in store.sessions { seen.markSeen(s) }
         demoLog("detail=true")
-        withAnimation(Self.openSpring) { state.detail = true; state.expanded = true }
-        morph(to: DetailView.size, animated: true, spring: Self.openSpring)
+        withAnimation(Self.openWidth) { state.detail = true; state.expanded = true }
+        morph(to: DetailView.size, .open)
         installOutsideMonitor()
     }
 
@@ -348,8 +368,8 @@ final class IslandController {
         guard state.detail else { return }
         removeOutsideMonitor()
         demoLog("detail=false")
-        withAnimation(Self.closeSpring) { state.detail = false; state.expanded = false }
-        morph(to: targetShapeSize(expanded: false), animated: true, spring: Self.closeSpring)
+        withAnimation(Self.closeHeight) { state.detail = false; state.expanded = false }
+        morph(to: targetShapeSize(expanded: false), .close)
         afterCollapse(pin: state.pinned)
     }
 

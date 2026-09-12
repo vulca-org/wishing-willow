@@ -7,6 +7,14 @@ import Observation
 /// the directory is missing it stays empty rather than creating it — the
 /// plugin owns that directory, and a reader that creates it would make "the
 /// plugin never ran" indistinguishable from "the plugin ran and found nothing".
+/// 一轮的时间线：按回车的时刻、结束（或撤回）的时刻、读到的进度。刻度尺按它画。
+struct TurnTimeline: Sendable, Equatable {
+    var startedAt: Date
+    /// nil = 还在进行。
+    var endedAt: Date?
+    var progress: TurnProgress
+}
+
 @MainActor
 @Observable
 final class WillowStore {
@@ -50,6 +58,22 @@ final class WillowStore {
             self.recentWithdraw[sessionId] = nil
             self.onLiveChange?()
         }
+    }
+
+    /// 结束了的一轮留下的时间线（按会话）。只保留到这个会话开始下一轮。
+    struct FinishedTurn: Sendable, Equatable { let turn: String; let timeline: TurnTimeline }
+    private(set) var finished: [String: FinishedTurn] = [:]
+    /// 进行中各轮按回车的时刻。插件在 Stop 时会把 updatedAt 改写成结束时刻，起点只能在进行中记下。
+    private var liveStart: [String: Date] = [:]
+
+    /// 这一轮的时间线：进行中（或刚撤回）用实时进度；结束了用结束时留下的那份。
+    func timeline(for s: SessionState) -> TurnTimeline? {
+        if let p = progress(for: s), let k = liveKey(s) {
+            let start = liveStart[k] ?? s.record.updatedAt ?? p.firstWriteAt ?? Date()
+            return TurnTimeline(startedAt: start, endedAt: p.interruptedAt, progress: p)
+        }
+        guard let f = finished[s.id], f.turn == s.record.turnId else { return nil }
+        return f.timeline
     }
 
     private func liveKey(_ s: SessionState) -> String? { s.record.turnId.map { "\(s.id)|\($0)" } }
@@ -242,6 +266,7 @@ final class WillowStore {
             // 进入或离开「等你选择」也要立刻重建：它决定会话算不算过期。
             if (old?.pendingChoice == nil) != (p.pendingChoice == nil) { interruptChanged = true }
             next[key] = p
+            if liveStart[key] == nil { liveStart[key] = s.record.updatedAt ?? p.firstWriteAt ?? Date() }
             if primed {                                             // 启动时已有的事件不闪
                 if p.decode != nil, p.interruptedAt == nil, !arrivedTurns.contains(key) {
                     arrivedTurns.insert(key)
@@ -261,6 +286,23 @@ final class WillowStore {
             }
         }
         if next.count != liveProgress.count { changed = true }
+        // 一轮刚结束：留下它的时间线，展开态的刻度尺还要画这一轮。
+        // 结束前最后不到一秒写下的行还没读到——趁跟读器还没忘掉这一轮，补读一次到文件末尾。
+        for (key, old) in liveProgress where next[key] == nil {
+            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2,
+                  let s = sessions.first(where: { $0.id == parts[0] && $0.record.turnId == parts[1] }),
+                  s.declaration != .inProgress, s.declaration != .interrupted else { continue }
+            var p = old
+            if let path = s.record.transcriptPath, let off = s.record.transcriptOffset ?? resolvedOffsets[key],
+               let tail = follower.progress(key: key, path: path, offset: off) { p = tail }
+            let start = liveStart[key] ?? p.firstWriteAt ?? s.record.updatedAt ?? Date()
+            finished[s.id] = FinishedTurn(turn: parts[1], timeline: TurnTimeline(
+                startedAt: start, endedAt: s.record.turnEndedAt ?? p.lastEventAt ?? Date(), progress: p))
+            changed = true
+        }
+        finished = finished.filter { sid, f in sessions.contains { $0.id == sid && $0.record.turnId == f.turn } }
+        liveStart = liveStart.filter { next[$0.key] != nil }
         liveProgress = next
         follower.forget(keeping: Set(next.keys))
         let current = Set(sessions.compactMap(liveKey))
