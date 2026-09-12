@@ -11,13 +11,15 @@
     "decode": "只排版，不动任何文字。",
     "tag": "排版成一页",
     "reminded": true,
-    "prompt_startswith": "把上一轮那份东西"
+    "prompt_startswith": "把上一轮那份东西",
+    "origin": "user"
   },
   "log_lines": 1,
   "log_last": {
     "reminded": true,
     "decode": "只排版，不动任何文字。",
     "tag": "排版成一页",
-    "prompt": "把上一轮那份东西整理成一页，别改内容，我看看最后长什么样。"
+    "prompt": "把上一轮那份东西整理成一页，别改内容，我看看最后长什么样。",
+    "origin": "user"
   }
 }

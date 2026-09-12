@@ -228,6 +228,7 @@ try {
       endedAt,
       reminded: prev.reminded ?? null,
       promptField: prev.promptField ?? null,
+      origin: prev.origin ?? null,
       prompt: prev.prompt ?? null,
       decode,
       tag,

@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdir
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 5;
+export const SCHEMA = 6;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {
@@ -194,6 +194,15 @@ const MIN_WEIGHT = 20;
  */
 const SYSTEM_ENVELOPE =
   /^\s*(?:<(?:task-notification|ci-monitor-event|system-reminder|command-name|command-message|local-command-stdout)\b|\[SYSTEM NOTIFICATION)/i;
+
+/**
+ * 这句原话是不是系统塞进来的信封。capture 用它决定要不要提醒，也把结果作为
+ * 事实记进状态（`origin`）—— 读方照这个字段显示，不再自己拿一份正则去猜。
+ * 两份规则分别写在 JS 和 Swift 里，迟早漂成两套。
+ */
+export function isSystemEnvelope(prompt) {
+  return typeof prompt === 'string' && SYSTEM_ENVELOPE.test(prompt.trim());
+}
 
 export function shouldBypass(prompt) {
   if (typeof prompt !== 'string') return true;

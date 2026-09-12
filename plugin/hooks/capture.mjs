@@ -7,7 +7,7 @@
 
 import { statSync } from 'node:fs';
 import {
-  SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, quietExit,
+  SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, isSystemEnvelope, quietExit,
 } from './_willow.mjs';
 
 /**
@@ -56,6 +56,10 @@ try {
   // 「我们没问」和「问了没答」就算成同一件事 —— 统计直接是错的。
   const bypass = prompt === null || shouldBypass(prompt);
 
+  // 原话是不是人说的。2026-09-12 真实截图：灵动岛把一条 <task-notification>
+  // 显示成了「你批准的」。原话照旧逐字记下，但要标明它的来历。
+  const origin = prompt === null ? null : (isSystemEnvelope(prompt) ? 'system' : 'user');
+
   const prev = readState(sessionId);
   writeState(sessionId, {
     schema: SCHEMA,
@@ -68,6 +72,7 @@ try {
     updatedAt: new Date().toISOString(),
     prompt,
     promptField,
+    origin,
     reminded: !bypass,
     decode: null,          // absence is the signal; extract.mjs fills it in
     tag: null,             // ≤6 字，同样由 extract.mjs 填

@@ -26,6 +26,7 @@
     "reminded",
     "decode",
     "tag",
-    "endedAt"
+    "endedAt",
+    "origin"
   ]
 }
