@@ -16,11 +16,16 @@ enum FocusRule {
         let l = live(store)
         // 钉住的会话优先：声明到达或撤回时，展开的必须是那个会话，不是排第一的。
         if let pinned, let p = l.first(where: { $0.id == pinned }) { return p }
-        return l.first { $0.declaration == .unreadable }
-            ?? l.first { store.recentWithdraw[$0.id] != nil }
-            ?? l.first { seen.isUnread($0) && $0.flaggedByModel }
-            ?? l.first { seen.isUnread($0) }
-            ?? l.first
+        let rules: [(SessionState) -> Bool] = [
+            { $0.declaration == .unreadable },
+            // 模型停下来等你选：唯一一种「你不回去它就一直等」的状态，排在所有提示前面。
+            { store.progress(for: $0)?.pendingChoice != nil },
+            { store.recentWithdraw[$0.id] != nil },
+            { seen.isUnread($0) && $0.flaggedByModel },
+            { seen.isUnread($0) },
+        ]
+        for rule in rules { if let hit = l.first(where: rule) { return hit } }
+        return l.first
     }
 
     static func others(_ store: WillowStore) -> Int { max(0, live(store).count - 1) }
@@ -29,10 +34,15 @@ enum FocusRule {
     /// 只挑有话说的：看过且空闲的会话不占胶囊，胶囊里放一个 logo 等于没放。
     static func secondary(_ store: WillowStore, _ seen: SeenStore, primary: SessionState?) -> SessionState? {
         let l = live(store).filter { $0.id != primary?.id }
-        return l.first { $0.declaration == .unreadable }
-            ?? l.first { store.recentWithdraw[$0.id] != nil }
-            ?? l.first { $0.declaration == .inProgress }
-            ?? l.first { pill($0, seen, store) != nil }
+        let rules: [(SessionState) -> Bool] = [
+            { $0.declaration == .unreadable },
+            { store.progress(for: $0)?.pendingChoice != nil },
+            { store.recentWithdraw[$0.id] != nil },
+            { $0.declaration == .inProgress },
+            { pill($0, seen, store) != nil },
+        ]
+        for rule in rules { if let hit = l.first(where: rule) { return hit } }
+        return nil
     }
 
     /// 收起态的一对：主会话占两翼，第二个进胶囊。
@@ -55,6 +65,7 @@ enum FocusRule {
     /// 胶囊里放什么。宽度只够一个符号加两三个字，所以是枚举，不是一句话。
     enum Pill: Equatable {
         case broken
+        case choice(plan: Bool, since: Date?)
         case withdraw(interrupted: Bool)
         case running(since: Date?)
         case fresh(tag: String?, flagged: Bool)
@@ -63,6 +74,7 @@ enum FocusRule {
 
     static func pill(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Pill? {
         if s.declaration == .unreadable { return .broken }
+        if let c = store.progress(for: s)?.pendingChoice { return .choice(plan: c.kind == .plan, since: c.at) }
         if let w = store.recentWithdraw[s.id] { return .withdraw(interrupted: w.kind == .interrupted) }
         if s.declaration == .inProgress { return .running(since: s.record.updatedAt) }
         guard seen.isUnread(s) else { return nil }
@@ -80,6 +92,9 @@ enum FocusRule {
     /// 不能把上一轮的解码冒充成这一轮的，也不该退回一个被截断的工作区名。
     static func label(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Label? {
         if s.declaration == .unreadable { return Label(text: "读不到输入", carried: false) }
+        if let c = store.progress(for: s)?.pendingChoice {        // 看过也照样显示：它在等你
+            return Label(text: c.kind == .plan ? "等你批准" : "等你选择", carried: false)
+        }
         if let w = store.recentWithdraw[s.id] {
             return Label(text: w.kind == .interrupted ? "已撤回" : "撤回排队", carried: true)
         }

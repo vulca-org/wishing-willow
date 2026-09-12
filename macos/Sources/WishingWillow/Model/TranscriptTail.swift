@@ -29,13 +29,27 @@ struct TurnProgress: Sendable, Equatable {
     /// 撤回的排队消息。这种撤回不经过插件钩子，状态文件毫无变化，只有聊天记录里有一行
     /// （两天 92 次排队移除，88 次是系统通知，4 次是用户自己的文字）。
     var withdrawnQueued: [String] = []
+    /// 模型停下来等你做选择：AskUserQuestion 选择题或 ExitPlanMode 批准计划，还没收到回答。
+    /// 这段时间模型什么都不写（本机 89 次中位 88 秒、最长 1,357 秒），只看落盘会以为它卡住或已结束。
+    /// 问题与回答靠 tool_use 的 id 与回答里的 tool_use_id 对上（89/89 对）。
+    struct Choice: Sendable, Equatable {
+        enum Kind: Sendable, Equatable { case question, plan }
+        var id: String
+        var kind: Kind
+        var at: Date?
+        var header: String?
+        var question: String?
+        var options: [String]
+        var count: Int
+    }
+    var pendingChoice: Choice?
 
     mutating func ingest(_ row: [String: Any]) {
         guard (row["isSidechain"] as? Bool) != true else { return }
         let at = (row["timestamp"] as? String).flatMap(WillowRecord.parseISO8601)
         switch row["type"] as? String {
         case "assistant": break
-        case "user": noteInterrupt(row, at: at); return
+        case "user": noteInterrupt(row, at: at); noteToolResult(row); return
         case "queue-operation": noteQueueRemove(row); return
         default: return
         }
@@ -56,6 +70,7 @@ struct TurnProgress: Sendable, Equatable {
             case "tool_use":
                 steps.append(Step(at: at, text: TranscriptTail.describe(
                     tool: b["name"] as? String ?? "", input: b["input"] as? [String: Any] ?? [:])))
+                noteChoice(b, at: at)
             default:
                 break
             }
@@ -70,6 +85,39 @@ struct TurnProgress: Sendable, Equatable {
         guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines),
               t.hasPrefix("[Request interrupted by user") else { return }
         if interruptedAt == nil { interruptedAt = at ?? Date() }
+        pendingChoice = nil                                  // 打断就不再等你选了
+    }
+
+    private mutating func noteChoice(_ b: [String: Any], at: Date?) {
+        let input = b["input"] as? [String: Any] ?? [:]
+        let id = b["id"] as? String ?? ""
+        switch b["name"] as? String {
+        case "AskUserQuestion":
+            let qs = input["questions"] as? [[String: Any]] ?? []
+            let first = qs.first
+            pendingChoice = Choice(id: id, kind: .question, at: at,
+                                   header: first?["header"] as? String,
+                                   question: first?["question"] as? String,
+                                   options: (first?["options"] as? [[String: Any]] ?? []).compactMap { $0["label"] as? String },
+                                   count: max(1, qs.count))
+        case "ExitPlanMode":
+            // 计划是 markdown，取第一行非空内容当题面（去掉标题的 #）。
+            let title = (input["plan"] as? String)?
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespaces)) }
+                .first { !$0.isEmpty }
+            pendingChoice = Choice(id: id, kind: .plan, at: at, header: "计划", question: title, options: [], count: 1)
+        default:
+            break
+        }
+    }
+
+    private mutating func noteToolResult(_ row: [String: Any]) {
+        guard let pending = pendingChoice,
+              let blocks = (row["message"] as? [String: Any])?["content"] as? [[String: Any]] else { return }
+        if blocks.contains(where: { ($0["type"] as? String) == "tool_result" && ($0["tool_use_id"] as? String) == pending.id }) {
+            pendingChoice = nil
+        }
     }
 
     private mutating func noteQueueRemove(_ row: [String: Any]) {

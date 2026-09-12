@@ -75,10 +75,11 @@ final class IslandController {
         ))
         panel.contentView = host
 
-        store.onDeclarationArrived = { [weak self] s in self?.arrive(s.id) }
+        store.onDeclarationArrived = { [weak self] s in self?.arrive(s.id, reason: "declaration-arrived") }
         store.onReload = { [weak self] in self?.layout(animated: true) }
         store.onLiveChange = { [weak self] in self?.layout(animated: true) }
         store.onWithdraw = { [weak self] s, kind in self?.withdraw(kind, pinning: s.id) }
+        store.onChoiceArrived = { [weak self] s in self?.arrive(s.id, reason: "choice-arrived") }
         store.start()
         morph(to: targetShapeSize(expanded: false), animated: false, spring: Self.moveSpring)
         panel.orderFrontRegardless()
@@ -202,7 +203,7 @@ final class IslandController {
                                   notchWidth: g.width, notchHeight: g.height)
                 .frame(width: Self.expandedWidth))
         let fit = probe.sizeThatFits(in: CGSize(width: Self.expandedWidth, height: 10_000))
-        return max(72, min(300, ceil(fit.height)))
+        return max(72, min(340, ceil(fit.height)))
     }
 
     // MARK: 交互
@@ -242,12 +243,12 @@ final class IslandController {
     }
 
     /// 声明到达：没在展示别的就展开 6 秒；正在展示另一个会话就排队，不顶掉你读到一半的那个。
-    private func arrive(_ id: String) {
-        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored declaration-arrived"); return }
+    private func arrive(_ id: String, reason: String) {
+        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored \(reason)"); return }
         if state.detail { return }
         let showing = state.expanded ? state.pinned : nil
         if arrivals.offer(id, showing: showing) {
-            flash(pinning: id)
+            flash(pinning: id, reason: reason)
         } else {
             demoLog("queued \(id.prefix(8)) behind \(showing.map { String($0.prefix(8)) } ?? "-")")
             layout(animated: true)
@@ -255,13 +256,13 @@ final class IslandController {
     }
 
     /// 静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
-    private func flash(pinning id: String) {
+    private func flash(pinning id: String, reason: String = "declaration-arrived") {
         if state.detail { return }
         state.pinned = id
         if state.expanded {
             morph(to: targetShapeSize(expanded: true), animated: true, spring: Self.moveSpring)
         } else {
-            setExpanded(true, reason: "declaration-arrived")
+            setExpanded(true, reason: reason)
         }
         autoCollapse?.invalidate()
         autoCollapse = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in

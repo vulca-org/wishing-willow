@@ -25,6 +25,8 @@ struct SessionState: Identifiable, Sendable, Equatable {
     var liveLastEvent: Date? = nil
     /// 实时读到的打断时间。
     var liveInterruptedAt: Date? = nil
+    /// 实时读到模型在等你选择。等待期间不落盘，不能按「10 分钟没动静」判过期（本机最长等过 1,357 秒）。
+    var liveWaiting = false
 
     var prompt: String? { record.prompt }
     var tag: String? {
@@ -75,6 +77,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
     var isStale: Bool {
         if record.endedAt != nil { return true }
         if let pid = record.pid, !Self.processIsAlive(pid) { return true }
+        if liveWaiting { return false }
         guard let updated = [record.updatedAt, liveLastEvent].compactMap({ $0 }).max() else { return true }
         return now.timeIntervalSince(updated) > Self.staleAfter
     }

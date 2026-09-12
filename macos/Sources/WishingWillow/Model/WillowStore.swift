@@ -58,7 +58,8 @@ final class WillowStore {
         let lp = liveKey(s).flatMap { liveProgress[$0] }
         return SessionState(record: s.record, now: now,
                             liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
-                            liveInterruptedAt: lp?.interruptedAt)
+                            liveInterruptedAt: lp?.interruptedAt,
+                            liveWaiting: lp?.pendingChoice != nil)
     }
 
     /// 活的在前；再按最近一次动静排序——状态文件的时间和实时读到的最后一次落盘，取较晚的。
@@ -226,6 +227,7 @@ final class WillowStore {
         var changed = false
         var interruptChanged = false
         var withdrawals: [(SessionState, WithdrawKind)] = []
+        var choices: [SessionState] = []
         for s in sessions where s.declaration == .inProgress || s.declaration == .interrupted {
             guard let pid = s.record.pid, SessionState.processIsAlive(pid),
                   let path = s.record.transcriptPath, let key = liveKey(s),
@@ -234,8 +236,11 @@ final class WillowStore {
             guard let p = follower.progress(key: key, path: path, offset: off) else { continue }
             let old = liveProgress[key]
             if old?.decode != p.decode || old?.steps.count != p.steps.count
-                || old?.firstWriteAt != p.firstWriteAt || old?.thinkingSeen != p.thinkingSeen { changed = true }
+                || old?.firstWriteAt != p.firstWriteAt || old?.thinkingSeen != p.thinkingSeen
+                || old?.pendingChoice != p.pendingChoice { changed = true }
             if (old?.interruptedAt == nil) != (p.interruptedAt == nil) { interruptChanged = true }
+            // 进入或离开「等你选择」也要立刻重建：它决定会话算不算过期。
+            if (old?.pendingChoice == nil) != (p.pendingChoice == nil) { interruptChanged = true }
             next[key] = p
             if primed {                                             // 启动时已有的事件不闪
                 if p.decode != nil, p.interruptedAt == nil, !arrivedTurns.contains(key) {
@@ -246,8 +251,13 @@ final class WillowStore {
                 if p.withdrawnQueued.count > (old?.withdrawnQueued.count ?? p.withdrawnQueued.count) {
                     withdrawals.append((s, .queued))
                 }
-            } else if p.decode != nil {
-                arrivedTurns.insert(key)
+                if let c = p.pendingChoice, !announcedChoices.contains(c.id) {
+                    announcedChoices.insert(c.id)
+                    choices.append(s)
+                }
+            } else {
+                if p.decode != nil { arrivedTurns.insert(key) }
+                if let c = p.pendingChoice { announcedChoices.insert(c.id) }
             }
         }
         if next.count != liveProgress.count { changed = true }
@@ -265,7 +275,8 @@ final class WillowStore {
                 let lp = liveKey(s).flatMap { next[$0] }
                 return SessionState(record: s.record, now: now,
                                     liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
-                                    liveInterruptedAt: lp?.interruptedAt)
+                                    liveInterruptedAt: lp?.interruptedAt,
+                                    liveWaiting: lp?.pendingChoice != nil)
             })
             changed = true
         }
@@ -275,8 +286,16 @@ final class WillowStore {
             onWithdraw?(fresh, kind)
             changed = true
         }
+        for s in choices {
+            onChoiceArrived?(sessions.first { $0.id == s.id } ?? s)
+            changed = true
+        }
         if changed { onLiveChange?() }
     }
 
     private var primed = false
+    /// 已经为之展开过的选择题（tool_use id）。启动时就挂着的记为已宣布，不闪。
+    private var announcedChoices: Set<String> = []
+    /// 模型停下来等你选择时回调——和声明到达一样展开一次。
+    var onChoiceArrived: ((SessionState) -> Void)?
 }

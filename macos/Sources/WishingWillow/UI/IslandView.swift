@@ -160,6 +160,16 @@ struct StatusGlyph: View {
                 }
             }
             .transition(.scale(scale: 0.6).combined(with: .opacity))
+        } else if let c = store.progress(for: f)?.pendingChoice {
+            // 等你选择：换成会动的问号，计时从模型提问那一刻算——这是它等了你多久。
+            HStack(spacing: 5) {
+                Image(systemName: c.kind == .plan ? "checklist" : "questionmark.bubble.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ChoiceCard.accent)
+                    .symbolEffect(.pulse, options: .repeating)
+                if let at = c.at ?? f.record.updatedAt { LiveClock(since: at, opacity: 0.8) }
+            }
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
         } else if f.declaration == .inProgress {
             HStack(spacing: 5) {
                 Image(systemName: "ellipsis")
@@ -206,6 +216,9 @@ struct SessionPill: View {
             case .broken:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red)
                 Text("读不到")
+            case .choice(let plan, let since):
+                Image(systemName: plan ? "checklist" : "questionmark.bubble.fill").foregroundStyle(ChoiceCard.accent)
+                if let since { LiveClock(since: since, opacity: 0.9) } else { Text(plan ? "等批准" : "等你选") }
             case .withdraw:
                 Image(systemName: "arrow.uturn.backward")
                 Text("撤回")
@@ -318,7 +331,11 @@ struct IslandExpandedContent: View {
     }
 
     private func earTag(_ s: SessionState) -> String {
-        FocusRule.label(s, seen, store)?.text ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
+        // 等你选择时「等你选择」已经在阶段位上，标签位放这一轮在做什么——先前两处写了同一句。
+        if let p = store.progress(for: s), p.pendingChoice != nil {
+            return p.tag ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
+        }
+        return FocusRule.label(s, seen, store)?.text ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
     }
 
     private func phaseWord(_ s: SessionState) -> String {
@@ -329,6 +346,7 @@ struct IslandExpandedContent: View {
         case .awaiting: return "等待开始"
         case .inProgress:
             guard let p = store.progress(for: s) else { return "回答中" }
+            if let c = p.pendingChoice { return c.kind == .plan ? "等你批准" : "等你选择" }
             if p.decode != nil { return "实时" }
             return p.firstWriteAt == nil ? "思考中" : "回答中"
         case .declared, .undeclared, .notAsked: return "已结束"
@@ -502,7 +520,11 @@ struct LiveTurnSection: View {
                     if let started { LiveClock(since: started, size: 11.5, opacity: 0.5) }
                 }
             }
-            if let steps = progress?.steps, !steps.isEmpty {
+            if let c = progress?.pendingChoice, progress?.interruptedAt == nil {
+                // 在等你选的时候，步骤不是重点：换成题面与选项。
+                ChoiceCard(choice: c)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+            } else if let steps = progress?.steps, !steps.isEmpty {
                 let recent = Array(steps.suffix(3))
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(recent.enumerated()), id: \.offset) { i, st in
@@ -534,11 +556,63 @@ struct LiveTurnSection: View {
         .animation(.easeOut(duration: 0.3), value: progress?.decode)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: progress?.interruptedAt)
         .animation(.easeOut(duration: 0.25), value: progress?.steps.count)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: progress?.pendingChoice)
     }
 
     private var phase: String {
         guard let p = progress else { return "模型正在回答" }
         if p.firstWriteAt == nil { return "思考中" }
         return p.steps.isEmpty ? "开始回答，还没写出声明" : "在执行，还没写出声明"
+    }
+}
+
+/// 模型在等你选：题面与选项。灵动岛没法往 Claude Code 里输入，不替你选，只负责把你叫回去。
+/// 颜色另起一个蓝：橙色是「读偏了」、红色是「插件坏了」，而「轮到你了」不是任何一种错误。
+struct ChoiceCard: View {
+    let choice: TurnProgress.Choice
+    static let accent = Color(red: 0.45, green: 0.78, blue: 1.0)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: choice.kind == .plan ? "checklist" : "questionmark.bubble.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Self.accent)
+                    .symbolEffect(.pulse, options: .repeating)
+                Text(choice.kind == .plan ? "模型在等你批准计划" : "模型在等你选择")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                if choice.count > 1 {
+                    Text("共 \(choice.count) 题").font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.45))
+                }
+                Spacer(minLength: 0)
+                if let at = choice.at { LiveClock(since: at, size: 11, opacity: 0.55) }
+            }
+            if let q = choice.question {
+                Text(q).font(.system(size: 13)).foregroundStyle(Color.white.opacity(0.9)).lineLimit(2)
+            }
+            if !choice.options.isEmpty {
+                HStack(spacing: 5) {
+                    ForEach(Array(choice.options.prefix(4).enumerated()), id: \.offset) { _, o in
+                        Text(o)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                            .lineLimit(1)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                    }
+                    if choice.options.count > 4 {
+                        Text("+\(choice.options.count - 4)").font(.system(size: 10.5)).foregroundStyle(Color.white.opacity(0.45))
+                    }
+                }
+            }
+            Text(choice.kind == .plan ? "回 Claude Code 里批准" : "回 Claude Code 里选")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Self.accent.opacity(0.9))
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Self.accent.opacity(0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Self.accent.opacity(0.28), lineWidth: 0.5))
     }
 }
