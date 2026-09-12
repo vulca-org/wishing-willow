@@ -36,7 +36,6 @@ final class IslandController {
     private let seen = SeenStore()
     private let state = IslandState()
     private let panel = IslandPanel()
-    private var detail: NSWindow?
     private var autoCollapse: Timer?
 
     private(set) var yielding = false
@@ -53,7 +52,8 @@ final class IslandController {
             store: store, seen: seen, state: state,
             notchWidth: notchGeometry().width,
             onHover: { [weak self] inside in self?.hover(inside) },
-            onClick: { [weak self] in self?.openDetail() }
+            onClick: { [weak self] in self?.openDetail() },
+            onClose: { [weak self] in self?.closeDetail() }
         ))
         panel.contentView = host
 
@@ -90,6 +90,7 @@ final class IslandController {
 
     /// 形状的目标尺寸：展开 480 × 内容高；收起时有话说才长出两翼，否则缩回刘海宽。
     private func targetShapeSize(expanded: Bool) -> CGSize {
+        if state.detail { return DetailView.size }
         let g = notchGeometry()
         if expanded { return CGSize(width: Self.expandedWidth, height: expandedHeight()) }
         let wings = FocusRule.focus(store, seen).flatMap { FocusRule.label($0, seen, store) } != nil
@@ -157,6 +158,7 @@ final class IslandController {
         // 演示要可复现：你的鼠标恰好经过展开后的面板，悬停收回就会让「展开态」截图拍成收起态。
         // 忽略，但记下来——被忽略的事件本身就是证据。
         if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored hover inside=\(inside)"); return }
+        if state.detail { return }                          // 面板打开时悬停不收放
         if inside {
             autoCollapse?.invalidate()
             if let f = FocusRule.focus(store, seen) { seen.markSeen(f) }
@@ -173,6 +175,7 @@ final class IslandController {
     /// 一轮刚开始：静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
     private func flash() {
         if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored declaration-arrived"); return }
+        if state.detail { return }
         setExpanded(true, reason: "declaration-arrived")
         autoCollapse?.invalidate()
         autoCollapse = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
@@ -195,24 +198,43 @@ final class IslandController {
               spring: .spring(response: on ? 0.42 : 0.34, dampingFraction: on ? 0.7 : 0.86))
     }
 
+    /// 点击：灵动岛再长大一档变成面板。不是另开窗口——用户实测原来的标准窗口「跳脱」。
     private func openDetail() {
-        if let w = detail, w.isVisible {
-            w.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
-                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-                         backing: .buffered, defer: false)
-        w.title = "许愿柳"
-        w.titlebarAppearsTransparent = true
-        w.isReleasedWhenClosed = false
-        w.center()
-        w.contentView = NSHostingView(rootView: DetailView(store: store, seen: seen))
-        detail = w
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        guard !state.detail else { return }
+        autoCollapse?.invalidate(); autoCollapse = nil
         for s in store.sessions { seen.markSeen(s) }
+        demoLog("detail=true")
+        let spring = Animation.spring(response: 0.46, dampingFraction: 0.78)
+        withAnimation(spring) { state.detail = true; state.expanded = true }
+        morph(to: DetailView.size, animated: true, spring: spring)
+        installOutsideMonitor()
+    }
+
+    func closeDetail() {
+        guard state.detail else { return }
+        removeOutsideMonitor()
+        demoLog("detail=false")
+        let spring = Animation.spring(response: 0.36, dampingFraction: 0.86)
+        withAnimation(spring) { state.detail = false; state.expanded = false }
+        morph(to: targetShapeSize(expanded: false), animated: true, spring: spring)
+    }
+
+    private var outsideMonitor: Any?
+
+    /// 点面板外面就收起。只监听鼠标按下：全局键盘监听要辅助功能权限，这个 app 不要那个权限。
+    private func installOutsideMonitor() {
+        removeOutsideMonitor()
+        outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state.detail else { return }
+                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.closeDetail() }
+            }
+        }
+    }
+
+    private func removeOutsideMonitor() {
+        if let m = outsideMonitor { NSEvent.removeMonitor(m) }
+        outsideMonitor = nil
     }
 
     // MARK: 给 --present 用

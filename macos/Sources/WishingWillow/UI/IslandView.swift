@@ -7,6 +7,8 @@ final class IslandState {
     /// 黑色形状此刻该有的尺寸。窗口只是舞台（瞬间定大小、透明），形状在舞台里用 spring 变化。
     /// 起因：录屏逐帧测过，NSPanel 的窗口尺寸动画根本没发生——宽度一步从 340 跳到 480，没有任何中间值。
     var shapeSize: CGSize = .zero
+    /// 点击后的面板态：灵动岛再长大一档。
+    var detail = false
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、下方两角圆，和刘海连成一块。
@@ -23,6 +25,7 @@ struct IslandView: View {
     let notchWidth: CGFloat
     let onHover: (Bool) -> Void
     let onClick: () -> Void
+    let onClose: () -> Void
 
     private var focus: SessionState? { FocusRule.focus(store, seen) }
 
@@ -36,7 +39,11 @@ struct IslandView: View {
                 // 两翼缩回刘海时整块不画：物理刘海本身是黑的，再画一层只会在圆角处漏出一两个像素。
                 .fill(Color.black.opacity(state.expanded || wingLabel != nil ? 1 : 0))
 
-                if state.expanded {
+                if state.detail {
+                    DetailView(store: store, seen: seen, onClose: onClose)
+                        .frame(width: DetailView.size.width, height: DetailView.size.height, alignment: .top)
+                        .transition(.opacity)
+                } else if state.expanded {
                     // 内容固定宽度，形状长大时被裁切着逐渐露出——不在长大过程中反复换行。
                     IslandExpandedContent(store: store, seen: seen)
                         .frame(width: IslandController.expandedWidth, alignment: .topLeading)
@@ -54,7 +61,7 @@ struct IslandView: View {
             // 悬停与点击只挂在形状上：舞台在过渡期间比形状大，那片透明边缘不该触发任何事。
             .contentShape(Rectangle())
             .onHover(perform: onHover)
-            .onTapGesture(perform: onClick)
+            .onTapGesture { if !state.detail { onClick() } }   // 面板里的点击交给面板自己
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)

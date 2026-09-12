@@ -97,6 +97,7 @@ enum SelfShot {
         for (name, json) in Snapshot.selfShotFixtures {
             try? Data(json.utf8).write(to: dir.appendingPathComponent(name))
         }
+        try? Data(Snapshot.sampleLog.utf8).write(to: dir.appendingPathComponent("sess-a.log.jsonl"))
         return dir
     }
 }

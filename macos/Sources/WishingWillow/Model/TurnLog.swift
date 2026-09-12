@@ -7,7 +7,9 @@ import Foundation
 /// they ever disagree. `promptField` is the one field the transcript does not
 /// know, so it is diagnostic only — no count may rest on it.
 struct TurnLogEntry: Sendable, Equatable, Identifiable {
-    var id: String { (turnId ?? "") + (endedAt.map { "\($0.timeIntervalSince1970)" } ?? "") }
+    var id: String {
+        (turnId ?? "") + "|" + (at.map { "\($0.timeIntervalSince1970)" } ?? "") + "|" + (endedAt.map { "\($0.timeIntervalSince1970)" } ?? "")
+    }
 
     var turnId: String?
     var at: Date?
@@ -16,6 +18,8 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
     /// and "we asked and got nothing" are the same row — and every statistic
     /// built on that confusion is wrong.
     var reminded: Bool?
+    /// 被打断的一轮（没有 Stop，下一条消息来之前由 capture 补记）。
+    var interrupted: Bool?
     var origin: String?
     var prompt: String?
     var decode: String?
@@ -34,13 +38,14 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
 }
 
 extension TurnLogEntry: Decodable {
-    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, promptField, origin, prompt, decode, tag }
+    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, interrupted, promptField, origin, prompt, decode, tag }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
         turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
         reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
+        interrupted = try c.decodeIfPresent(Bool.self, forKey: .interrupted)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
