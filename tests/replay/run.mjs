@@ -67,6 +67,17 @@ console.log(`\n  replay · ${caseNames.length} cases\n`);
 for (const name of caseNames) {
   const dir = join(CASES, name);
   const expect = read(join(dir, 'expect.json'));
+
+  // 顶层期望键也要白名单。写错一个键名、或者写了一条 runner 还不会查的期望，
+  // 都必须报错而不是静默跳过 —— 2026-09-12 这一族已经吃了两次：
+  // state_file 的未知键（14-tag-line 假绿）和这里的 log_* 。
+  const TOP_KEYS = new Set([
+    'note', 'env', 'transcript_two_phase', 'runtime_fields_exempt',
+    'capture', 'extract', 'state_file', 'state_keys', 'log_lines', 'log_last',
+  ]);
+  for (const k of Object.keys(expect)) {
+    if (!TOP_KEYS.has(k)) check(name, 'expect.keys', false, `runner 不认识期望键 ${k}`);
+  }
   const stateDir = mkdtempSync(join(tmpdir(), 'willow-test-'));
   const marks = [];
 
@@ -177,6 +188,32 @@ for (const name of caseNames) {
         }
       }
       marks.push(`state:${ok ? 'ok' : 'FAIL'}`);
+    }
+    // ── 轮次日志 ─────────────────────────────────────────────────────────
+    if (expect.log_lines !== undefined || expect.log_last !== undefined) {
+      const sid = (() => { try { return read(stop).session_id ?? read(ups).session_id; } catch { return null; } })();
+      const logPath = sid ? join(stateDir, `${sid}.log.jsonl`) : null;
+      const lines = logPath && existsSync(logPath)
+        ? readFileSync(logPath, 'utf8').split('\n').filter((l) => l.trim())
+        : [];
+      let ok = true;
+      if (expect.log_lines !== undefined) {
+        ok = check(name, 'log.lines', lines.length === expect.log_lines,
+          `期望 ${expect.log_lines} 行，得到 ${lines.length}`) && ok;
+      }
+      if (expect.log_last !== undefined) {
+        let last = null;
+        try { last = JSON.parse(lines[lines.length - 1]); } catch { /* 下面报 */ }
+        ok = check(name, 'log.last', last !== null, '最后一行不是合法 JSON 或不存在') && ok;
+        if (last) {
+          for (const [k, want] of Object.entries(expect.log_last)) {
+            const got = last[k] ?? null;
+            ok = check(name, `log.last.${k}`, got === want,
+              `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
+          }
+        }
+      }
+      marks.push(`log:${ok ? 'ok' : 'FAIL'}`);
     }
   } finally {
     rmSync(stateDir, { recursive: true, force: true });

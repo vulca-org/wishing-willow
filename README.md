@@ -143,12 +143,37 @@ which side of that line it was measured on.
 **It has no idea whether you're drifting productively.** Plenty of turns go somewhere
 you didn't specify and that's fine. The two rows are information, not a verdict.
 
+## The turn log
+
+Alongside the state file, each session gets `<session>.log.jsonl` — the last
+twenty turns, one line each: what you said, how the model read it, the tag,
+whether the plugin asked at all, and when the turn started and ended.
+
+It exists for one number. The claim this plugin makes is that seeing the two rows
+saves you turns, and the only way to test that is *drift happened at turn N, you
+noticed at turn M* — which cannot be computed without history. On the day the
+plugin first worked, the evidence for that number had to be mined out of the raw
+transcript by hand.
+
+**It is an index, not a source of truth.** Every load-bearing field can be
+recomputed from the transcript, the transcript wins if they disagree, and you can
+delete the log whenever you like. `promptField` is the one exception — it records
+which hook input key carried your prompt, which the transcript does not know — so
+it is for diagnosis only and no statistic may rest on it.
+
+**Whether the plugin asked is recorded, because the alternative produces wrong
+numbers.** A short acknowledgement gets no reminder and therefore no declaration;
+without `reminded`, that is indistinguishable from a turn where the model was
+asked and said nothing.
+
 ## Privacy
 
 No network calls. No telemetry. No model calls. State stays in
-`~/.claude/willow/`, one small JSON per session, and nothing else reads it unless
+`~/.claude/willow/`: one small JSON per session plus the twenty-turn log, which
+means **your prompts are on disk in a second place**. Nothing reads them unless
 you install the macOS app. Delete the directory any time; the plugin recreates it
-on the next turn.
+on the next turn. Files whose process is gone and that nobody has touched for a
+week are pruned automatically.
 
 Hooks that mishandle input get in the way of real work, so every failure path here
 exits 0 silently — malformed input, missing fields, unwritable directory. The

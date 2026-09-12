@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-16",
+  "prompt_id": "00000000-0000-4000-8000-000000000016",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "你批准的：把上一轮那份整理成一页，不改内容。\n我读成了：只排版，不动任何文字。\n标签：排版成一页\n\n开始。"
+}

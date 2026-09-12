@@ -23,6 +23,7 @@
     "updatedAt",
     "prompt",
     "promptField",
+    "reminded",
     "decode",
     "tag",
     "endedAt"

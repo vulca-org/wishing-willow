@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-17",
+  "prompt_id": "00000000-0000-4000-8000-000000000017",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "好，接着做。"
+}

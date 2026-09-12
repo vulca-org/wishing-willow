@@ -1,0 +1,20 @@
+{
+  "note": "纯确认被 bypass 跳过：没注入、也就没有声明。日志必须把它记成 reminded=false，否则统计会把「我们没问」和「问了没答」算成同一件事。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "empty"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": null,
+    "reminded": false,
+    "prompt_startswith": "好的 继续吧"
+  },
+  "log_lines": 1,
+  "log_last": {
+    "reminded": false,
+    "decode": null
+  }
+}

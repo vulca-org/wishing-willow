@@ -1,0 +1,23 @@
+{
+  "note": "轮次日志。没有它，「发现距离」（漂移发生在第 N 轮、你第 M 轮才发现）永远算不出来，而那是这个产品唯一可证伪的验收指标。日志是**索引不是真源**：每个字段都能从 transcript 重算，打架时以 transcript 为准。`reminded` 必须在：bypass 掉的短轮次也没有声明，但那是我们压根没问——两者在日志里长得一样，算出来的数就是错的。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": "只排版，不动任何文字。",
+    "tag": "排版成一页",
+    "reminded": true,
+    "prompt_startswith": "把上一轮那份东西"
+  },
+  "log_lines": 1,
+  "log_last": {
+    "reminded": true,
+    "decode": "只排版，不动任何文字。",
+    "tag": "排版成一页",
+    "prompt": "把上一轮那份东西整理成一页，别改内容，我看看最后长什么样。"
+  }
+}

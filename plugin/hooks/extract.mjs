@@ -7,7 +7,7 @@
 
 import { openSync, readSync, closeSync, statSync } from 'node:fs';
 import {
-  SCHEMA, readStdin, parseInput, readState, writeState, pruneState, quietExit,
+  SCHEMA, readStdin, parseInput, readState, writeState, appendTurnLog, pruneState, quietExit,
 } from './_willow.mjs';
 
 // Chinese full-width and ASCII colons both, plus an English form so the plugin
@@ -216,8 +216,22 @@ try {
 
   // Only ever touch `decode` and the timestamp. `prompt` stays exactly as
   // capture.mjs wrote it — this hook has no business rewriting what you said.
+  const endedAt = new Date().toISOString();
+
   if (prev) {
-    writeState(sessionId, { ...prev, decode, tag, updatedAt: new Date().toISOString() });
+    writeState(sessionId, { ...prev, decode, tag, updatedAt: endedAt });
+    // 只在 capture 跑过的时候记日志：没有 capture 就没有原话，也没有「问没问」，
+    // 记一条三个字段都是 null 的东西只会让统计更难看懂。
+    appendTurnLog(sessionId, {
+      turnId: prev.turnId ?? null,
+      at: prev.updatedAt ?? null,
+      endedAt,
+      reminded: prev.reminded ?? null,
+      promptField: prev.promptField ?? null,
+      prompt: prev.prompt ?? null,
+      decode,
+      tag,
+    });
   } else {
     // Stop without a preceding capture (plugin installed mid-turn, state wiped).
     // Record what we can rather than inventing a prompt.

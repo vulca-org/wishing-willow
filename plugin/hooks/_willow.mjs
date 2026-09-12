@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdir
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 4;
+export const SCHEMA = 5;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {
@@ -66,6 +66,50 @@ function safeId(id) {
 export function statePath(sessionId) {
   const id = safeId(sessionId);
   return id ? join(stateDir(), `${id}.json`) : null;
+}
+
+/**
+ * 轮次日志的路径。`.log.jsonl` 而不是 `.json` —— 读方 glob 的是 `*.json`，
+ * 两者不能撞上。
+ */
+export function logPath(sessionId) {
+  const id = safeId(sessionId);
+  return id ? join(stateDir(), `${id}.log.jsonl`) : null;
+}
+
+/**
+ * 把刚结束的这一轮追加进日志，只留最近 LOG_KEEP 条。
+ *
+ * **这份日志是索引，不是真源。** 承重的那几个字段 —— 原话、解码、标签、两个时间戳、
+ * 这一轮问没问 —— 都能从 transcript 重新算出来（问没问看那一轮有没有
+ * `hook_additional_context` 附件）。两者打架时以 transcript 为准，日志随时可以删掉。
+ * `promptField` 是例外：它记的是 hook 输入用了哪个键名，transcript 里没有这个信息，
+ * 所以它只是诊断用，任何统计都不许拿它当依据。
+ * 不把这条写死，就是在造第二份「真相」，然后开始查代理不查本体。
+ *
+ * 它存在的唯一理由是那个可证伪的验收指标：漂移发生在第 N 轮、人第 M 轮才发现，
+ * M−N 就是代价。没有历史，这个数永远算不出来。
+ */
+const LOG_KEEP = 20;
+
+export function appendTurnLog(sessionId, entry) {
+  const p = logPath(sessionId);
+  if (!p) return false;
+  try {
+    mkdirSync(stateDir(), { recursive: true });
+    let lines = [];
+    if (existsSync(p)) {
+      lines = readFileSync(p, 'utf8').split('\n').filter((l) => l.trim());
+    }
+    lines.push(JSON.stringify(entry));
+    const kept = lines.slice(-LOG_KEEP).join('\n') + '\n';
+    const tmp = `${p}.${process.pid}.tmp`;
+    writeFileSync(tmp, kept, 'utf8');
+    renameSync(tmp, p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function readState(sessionId) {
@@ -198,6 +242,7 @@ export function pruneState(keepId) {
       try { mtime = statSync(p).mtimeMs; } catch { continue; }
       if (now - mtime < PRUNE_AFTER_MS) continue;
       try { unlinkSync(p); } catch { /* 下次再说 */ }
+      try { unlinkSync(join(dir, `${id}.log.jsonl`)); } catch { /* 可能本来就没有 */ }
     }
   } catch { /* 清理失败从来不是要紧事 */ }
 }

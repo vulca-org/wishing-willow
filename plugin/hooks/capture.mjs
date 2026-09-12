@@ -52,6 +52,10 @@ try {
   // `prompt` and `promptField` null. That combination means "the hook ran and
   // could not read this turn's input" — a broken plugin, not a quiet model —
   // and the reader shows it as such instead of leaving the screen blank.
+  // 这一轮到底问没问，capture 是唯一知道的人。日志里没有这一位，
+  // 「我们没问」和「问了没答」就算成同一件事 —— 统计直接是错的。
+  const bypass = prompt === null || shouldBypass(prompt);
+
   const prev = readState(sessionId);
   writeState(sessionId, {
     schema: SCHEMA,
@@ -64,12 +68,13 @@ try {
     updatedAt: new Date().toISOString(),
     prompt,
     promptField,
+    reminded: !bypass,
     decode: null,          // absence is the signal; extract.mjs fills it in
     tag: null,             // ≤6 字，同样由 extract.mjs 填
     endedAt: null,
   });
 
-  if (prompt === null || shouldBypass(prompt)) quietExit();
+  if (bypass) quietExit();
 
   // Must be complete, valid JSON: Claude Code treats output starting with '{'
   // but not ending in '}' as plain text.

@@ -1,0 +1,8 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-16",
+  "prompt_id": "00000000-0000-4000-8000-000000000016",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "把上一轮那份东西整理成一页，别改内容，我看看最后长什么样。"
+}
