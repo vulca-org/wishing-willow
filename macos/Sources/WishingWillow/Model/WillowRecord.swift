@@ -24,7 +24,7 @@ struct WillowRecord: Sendable, Equatable {
     var pid: Int32?
     var cwd: String?
     var turnId: String?
-    var turnIndex: Int
+    var turnIndex: Int?
     var updatedAt: Date?
     var prompt: String?
     var promptOrigin: PromptOrigin
@@ -46,7 +46,7 @@ extension WillowRecord: Decodable {
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
         turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
-        turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex) ?? 0
+        turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)

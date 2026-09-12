@@ -20,7 +20,7 @@ Print exactly this, with no preamble beyond a single line of context:
 {
   "statusLine": {
     "type": "command",
-    "command": "node \"${CLAUDE_PLUGIN_ROOT}/statusline/willow-status.mjs\"",
+    "command": "sh -c 'p=$(ls -d \"$HOME\"/.claude/plugins/cache/wishing-willow/willow/*/statusline/willow-status.mjs 2>/dev/null | sort -V | tail -1); if [ -n \"$p\" ]; then exec node \"$p\"; else printf \"\\360\\237\\214\\277 willow · not installed\"; fi'",
     "padding": 1
   }
 }
@@ -28,9 +28,10 @@ Print exactly this, with no preamble beyond a single line of context:
 
 If you already have a `statusLine` key, replace it — Claude Code supports only one.
 
-**The path contains the plugin version.** After `/plugin update willow`, that
-directory changes and the status line goes blank. Re-run `/willow:setup` and
-paste the new path. (Tracked as a known wart, not a mystery.)
+The command finds the installed copy itself rather than naming a version, so
+`/plugin update willow` does not silently blank your status line. If the plugin
+is gone it prints a short notice instead of nothing: a status line that goes
+blank is indistinguishable from one that has nothing to say.
 
 Then start a new session, or run any prompt: the status line updates when the
 next assistant message arrives.

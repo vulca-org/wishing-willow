@@ -8,7 +8,7 @@
 // 纪律（用户全局规则〈八〉〈九〉）：这个 runner 必须先在空实现上跑出全红，
 // 才允许去写实现。没验证过能变红的测试是摆设。
 
-import { readFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -22,7 +22,7 @@ const CASES = join(HERE, 'cases');
 const read = (p) => JSON.parse(readFileSync(p, 'utf8'));
 
 /** 跑一个 hook，返回 {code, stdout, stderr}。stdin 以原始字节喂入（畸形输入也要能喂）。 */
-function runHook(script, stdinPath, stateDir) {
+function runHook(script, stdinPath, stateDir, extraEnv) {
   const entry = join(HOOKS, script);
   if (!existsSync(entry)) {
     return { code: null, stdout: '', stderr: `MISSING: ${entry}`, missing: true };
@@ -30,12 +30,17 @@ function runHook(script, stdinPath, stateDir) {
   // 真实载荷里的 transcript_path 是绝对路径，用例里写不出来。
   // 用例写 <CASE_DIR>/…，喂进去之前换成这个用例目录的真实路径。
   let input = readFileSync(stdinPath);
-  if (input.includes('<CASE_DIR>')) {
-    input = Buffer.from(input.toString('utf8').replaceAll('<CASE_DIR>', dirname(stdinPath)), 'utf8');
+  if (input.includes('<CASE_DIR>') || input.includes('<STATE_DIR>')) {
+    input = Buffer.from(
+      input.toString('utf8')
+        .replaceAll('<CASE_DIR>', dirname(stdinPath))
+        .replaceAll('<STATE_DIR>', stateDir),
+      'utf8'
+    );
   }
   const r = spawnSync('node', [entry], {
     input,
-    env: { ...process.env, WILLOW_STATE_DIR: stateDir },
+    env: { ...process.env, WILLOW_STATE_DIR: stateDir, ...(extraEnv ?? {}) },
     encoding: 'utf8',
     timeout: 10_000,
   });
@@ -66,10 +71,20 @@ for (const name of caseNames) {
   const marks = [];
 
   try {
+    // 两阶段 transcript：提交那一刻文件里只有历史，本轮的内容是之后才追加的。
+    // 这个顺序本身就是被测的东西 —— capture 记下的偏移必须是「本轮之前」的长度。
+    const twoPhase = expect.transcript_two_phase === true;
+    const liveTranscript = join(stateDir, 'transcript.jsonl');
+    if (twoPhase) {
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(liveTranscript, readFileSync(join(dir, 'transcript.pre.jsonl')));
+    }
+    const env = expect.env ?? undefined;
+
     // ── capture (UserPromptSubmit) ────────────────────────────────────────
     const ups = join(dir, 'user-prompt-submit.json');
     if (existsSync(ups) && expect.capture) {
-      const r = runHook('capture.mjs', ups, stateDir);
+      const r = runHook('capture.mjs', ups, stateDir, env);
       if (r.missing) {
         check(name, 'capture', false, r.stderr);
         marks.push('capture:MISSING');
@@ -96,9 +111,12 @@ for (const name of caseNames) {
     }
 
     // ── extract (Stop) ───────────────────────────────────────────────────
+    if (twoPhase) {
+      appendFileSync(liveTranscript, readFileSync(join(dir, 'transcript.turn.jsonl')));
+    }
     const stop = join(dir, 'stop.json');
     if (existsSync(stop) && expect.extract) {
-      const r = runHook('extract.mjs', stop, stateDir);
+      const r = runHook('extract.mjs', stop, stateDir, env);
       if (r.missing) {
         check(name, 'extract', false, r.stderr);
         marks.push('extract:MISSING');

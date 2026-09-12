@@ -94,7 +94,9 @@ struct TurnView: View {
                     .truncationMode(.head)
             }
             Spacer(minLength: 0)
-            Text("第 \(state.record.turnIndex + 1) 轮")
+            // 轮次可能是未知的（插件在一轮中间装上）。不知道就显示「—」，
+            // 不要把 null 渲染成「第 1 轮」——那是编一个看起来确定的数。
+            Text(state.record.turnIndex.map { "第 \($0 + 1) 轮" } ?? "第 — 轮")
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }

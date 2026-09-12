@@ -66,6 +66,39 @@ function scanMessage(message) {
   return decode === null ? null : { decode, tag };
 }
 
+/** Read from `from` to EOF, at most `max` bytes. Returns '' on any failure. */
+function slice(path, from, max) {
+  let fd;
+  try {
+    const size = statSync(path).size;
+    if (!(from >= 0) || from > size) return '';
+    const len = Math.min(size - from, max);
+    if (len <= 0) return '';
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, from);
+    return buf.toString('utf8');
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* nothing to do */ } }
+  }
+}
+
+/** Scan a chunk of transcript rows in order; returns the first declaration found. */
+function scanRows(text) {
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }   // 截断的半行
+    for (const t of assistantTexts(row)) {
+      const hit = scanMessage(t);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 /** Read at most `max` bytes from the end of a file. Returns '' on any failure. */
 function tail(path, max) {
   let fd;
@@ -114,11 +147,31 @@ function assistantTexts(row) {
  * declaration was recorded as absent. Read the transcript instead, and treat
  * `last_assistant_message` as the fallback for when it cannot be read.
  */
-function findDeclaration(input) {
+function findDeclaration(input, prev) {
   const path = input?.transcript_path;
+
+  // 首选：capture 在提交那一刻记下的偏移。从那里往后读就是这一轮，
+  // 没有边界搜索，也没有「窗口不够大」这种失败模式。
+  if (typeof path === 'string' && path && typeof prev?.transcriptOffset === 'number') {
+    const text = slice(path, prev.transcriptOffset, 64 << 20);
+    if (text) {
+      const hit = scanRows(text);
+      if (hit) return hit;
+      // 偏移有效但这一轮里没有声明 —— 这是确定的答案，不必再回溯。
+      if (prev.transcriptOffset <= (() => { try { return statSync(path).size; } catch { return -1; } })()) {
+        return null;
+      }
+    }
+  }
+
   if (typeof path === 'string' && path) {
     // Two bounded passes: a turn with large tool output can be several MB.
-    for (const window of [2 << 20, 16 << 20]) {
+    // WILLOW_TAIL_MAX exists so a test can shrink the window and actually
+    // exercise the "boundary is out of reach" path instead of asserting against
+    // a window big enough to hide it.
+    const cap = Number(process.env.WILLOW_TAIL_MAX) || 0;
+    const windows = cap > 0 ? [cap] : [2 << 20, 16 << 20];
+    for (const window of windows) {
       const text = tail(path, window);
       if (!text) break;
 
@@ -156,10 +209,10 @@ try {
   const sessionId = input.session_id;
   if (typeof sessionId !== 'string') quietExit();
 
-  const found = findDeclaration(input);
+  const prev = readState(sessionId);
+  const found = findDeclaration(input, prev);
   const decode = found?.decode ?? null;
   const tag = found?.tag ?? null;
-  const prev = readState(sessionId);
 
   // Only ever touch `decode` and the timestamp. `prompt` stays exactly as
   // capture.mjs wrote it — this hook has no business rewriting what you said.
@@ -174,7 +227,9 @@ try {
       pid: process.ppid,
       cwd: typeof input.cwd === 'string' ? input.cwd : null,
       turnId: typeof input.prompt_id === 'string' ? input.prompt_id : null,
-      turnIndex: 0,   // Stop 载荷不带轮次；capture 才知道，这里没有 capture
+      // 轮次只有 capture 知道，而这条路径正是「没有 capture」。
+      // 写 0 是编一个看起来确定的数；不知道就写 null，读方显示「—」。
+      turnIndex: null,
       updatedAt: new Date().toISOString(),
       prompt: null,
       decode,

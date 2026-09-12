@@ -52,7 +52,8 @@ Willow covers that gap, and only that gap. It is not a replacement for plan mode
 ```
 
 It prints a snippet for your `~/.claude/settings.json`. **It does not edit your
-settings for you.**
+settings for you.** The snippet resolves the installed path at runtime, so a
+plugin update does not blank your status line.
 
 **3 — macOS menu-bar reader** (optional) — see [`macos/`](macos/).
 

@@ -1,0 +1,19 @@
+{
+  "note": "一轮里塞进巨量工具输出时，从文件尾部回溯找不到本轮边界（窗口有上限），于是退回 last_assistant_message —— 那正是第三个 bug 的形态，会把一次**正确的**声明记成「没声明」。而且最坏的情况恰好落在最大的那一轮上。修法：capture 在提交时把 transcript 的字节长度记下来，extract 直接从那个偏移往后读 —— 不用搜边界，读到的就是且只是这一轮。本用例把尾读上限压到 4096 字节，逼出那个失败。",
+  "env": {
+    "WILLOW_TAIL_MAX": "4096"
+  },
+  "transcript_two_phase": true,
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": "逐个文件找吞掉错误的路径，只列不改。",
+    "tag": "列静默失败",
+    "prompt_startswith": "把这个目录整个扫一遍"
+  }
+}

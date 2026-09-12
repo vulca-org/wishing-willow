@@ -5,9 +5,23 @@
 // This hook runs before Claude sees your message and blocks until it returns,
 // so it does exactly two cheap things and then gets out of the way.
 
+import { statSync } from 'node:fs';
 import {
   SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, quietExit,
 } from './_willow.mjs';
+
+/**
+ * transcript 在此刻的字节长度 —— 也就是「本轮开始之前」的位置。
+ *
+ * Stop 那边靠它直接定位本轮：从这个偏移往后读，读到的就是且只是这一轮，
+ * 不用从文件尾部回溯猜边界。回溯那条路有窗口上限，而超出上限的恰好是
+ * 塞了巨量工具输出的那种大轮次 —— 于是最重要的那一轮最容易被误报成
+ * 「没声明」。一次 statSync 是微秒级，这个 hook 挡着用户的回车，只做得起这么多。
+ */
+function transcriptLength(path) {
+  if (typeof path !== 'string' || !path) return null;
+  try { return statSync(path).size; } catch { return null; }
+}
 
 const REMINDER =
   '【Wishing-Willow】请在本轮回复的最开头写三行，然后再回答：\n' +
@@ -45,6 +59,7 @@ try {
     pid: process.ppid,
     cwd: typeof input.cwd === 'string' ? input.cwd : null,
     turnId: typeof input.prompt_id === 'string' ? input.prompt_id : null,
+    transcriptOffset: transcriptLength(input.transcript_path),
     turnIndex: (prev?.turnIndex ?? -1) + 1,
     updatedAt: new Date().toISOString(),
     prompt,

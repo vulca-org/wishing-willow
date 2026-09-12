@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-15",
+  "prompt_id": "00000000-0000-4000-8000-000000000015",
+  "transcript_path": "<STATE_DIR>/transcript.jsonl",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "把这个目录整个扫一遍，把所有会静默失败的地方列出来，先不要改。"
+}
