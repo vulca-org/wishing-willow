@@ -1,0 +1,14 @@
+{
+  "note": "引用一段声明不是做出一段声明。2026-09-12 13:52 实证：模型在代码块里贴出另一轮的两行做演示，提取器把引文当成了本轮的声明。同一个 bug 当天第二次让统计出错（31 条 vs 真实 9 条）。栅栏、引用块、缩进代码里的行一律不算。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": null,
+    "prompt_startswith": "把刚才那两行贴出来"
+  }
+}

@@ -73,7 +73,7 @@ nothing else breaks.
 | | |
 |---|---|
 | `UserPromptSubmit` | Writes your prompt **verbatim** to `~/.claude/willow/<session>.json`. For substantial requests, asks the model to declare how it read you. Short replies, slash commands and acknowledgements are skipped. |
-| `Stop` | Reads the transcript of the turn that just ended and looks for the declaration at the top of the model's messages. Found → records it. Not found → leaves it `null`. |
+| `Stop` | Reads the transcript of the turn that just ended and looks for the declaration at the top of the model's messages. Found → records it, along with the short tag. Not found → leaves it `null`. Also prunes state files whose process is gone and that nobody has touched for a week. |
 | `statusLine` | Prints the two rows. |
 
 `Stop` hands the hook a field called `last_assistant_message`, which sounds like
@@ -95,6 +95,17 @@ whoever reads the file, from whether `decode` is empty. A status the hook could
 write is a status that could be wrong while the declaration is missing — which
 would restore exactly the silence this plugin exists to break.
 
+Three things never reach the model as a request to decode: a slash command, a
+pure acknowledgement, and **an envelope the user did not type**. Claude Code
+delivers background-task notifications and similar system messages through the
+same hook; on 2026-09-12 one of them made the plugin ask the model to declare
+what the user had approved when the user had said nothing at all.
+
+Quoting a declaration is not making one, either. Lines inside a code fence, a
+blockquote, or an indented block are skipped — the model pasting an example of
+the two rows must not be recorded as this turn's declaration. That bug corrupted
+a measurement the same day it appeared.
+
 There is a third state, and it exists because of a real failure. The hook input
 field carrying your prompt is `prompt`. The documentation says `user_prompt`.
 This plugin was written from the documentation, so for its first day it ran on
@@ -105,6 +116,10 @@ that matched. `prompt` and `promptField` both null means **the hook could not
 read your input** — the reader says so instead of drawing a blank row.
 
 ## What it cannot do
+
+**It never colours a turn green.** Green reads as "checked, fine", and nothing
+here checks. The model may mark its own decode line with ⚠ when it thinks the two
+rows disagree; the reader forwards that mark and computes nothing of its own.
 
 **It cannot tell whether the two rows actually agree.** That's semantic, and asking
 the model to judge its own decoding means asking it to use the same defaults that

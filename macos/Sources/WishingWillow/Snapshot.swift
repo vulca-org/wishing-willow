@@ -69,7 +69,7 @@ enum Snapshot {
 
     private static func record(
         id: String, cwd: String, turn: Int,
-        prompt: String?, promptField: String??, decode: String?, stamp: String? = nil
+        prompt: String?, promptField: String??, decode: String?, tag: String? = nil, stamp: String? = nil
     ) -> String {
         func q(_ s: String?) -> String {
             guard let s else { return "null" }
@@ -87,7 +87,7 @@ enum Snapshot {
         return """
         {"schema":2,"sessionId":"\(id)","pid":\(pid),"cwd":"\(cwd)","turnId":"t",\
         "turnIndex":\(turn),"updatedAt":"\(stamp ?? now)","prompt":\(q(prompt))\(field),\
-        "decode":\(q(decode)),"endedAt":null}
+        "decode":\(q(decode)),"tag":\(q(tag)),"endedAt":null}
         """
     }
 
@@ -96,7 +96,8 @@ enum Snapshot {
             id: "sess-a", cwd: "/Users/me/dev/atlas", turn: 4,
             prompt: "场景之一不是唯一，同样也不局限于此场景。我们要大范围地找到这个问题里面的逻辑是什么，然后找到可以复用的解决方案。",
             promptField: .some("prompt"),
-            decode: "去那个仓库里逐文件审计检查表与 spec，找漂移的具体证据")
+            decode: "⚠ 去那个仓库里逐文件审计检查表与 spec，找漂移的具体证据",
+            tag: "审计仓库")
 
         let undeclared = record(
             id: "sess-b", cwd: "/Users/me/dev/ledger", turn: 2,
@@ -110,7 +111,7 @@ enum Snapshot {
         let stale = record(
             id: "sess-d", cwd: "/Users/me/dev/archive", turn: 9,
             prompt: "先别动，我看一下昨天那版是怎么写的。",
-            promptField: .some("prompt"), decode: "只读，不改任何文件",
+            promptField: .some("prompt"), decode: "只读，不改任何文件", tag: "读旧版本",
             stamp: Date.ISO8601FormatStyle(includingFractionalSeconds: true)
                 .format(.now.addingTimeInterval(-3600)))
 

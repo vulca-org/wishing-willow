@@ -95,9 +95,15 @@ function main() {
     ? state.decode.trim()
     : null;
 
+  // ⚠ 开头 = 模型自己说两栏不一致。我们不重算，只把它的判断原样转发。
+  // 这里用颜色区分的是「谁说的」，不是「对不对」—— 判定一致性的活儿，
+  // 这个插件从头到尾不做。
+  const flagged = decode !== null && decode.startsWith('⚠');
+  const tag = typeof state.tag === 'string' && state.tag.trim() ? state.tag.trim() : null;
+
   const line1 = `${DIM}你批准的${RESET} ${asked}`;
   const line2 = decode
-    ? `${DIM}我读成了${RESET} ${truncate(decode, room)}`
+    ? `${DIM}我读成了${RESET} ${flagged ? WARN : ''}${truncate(decode, room - (tag ? width(tag) + 3 : 0))}${flagged ? RESET : ''}${tag ? ` ${DIM}[${tag}]${RESET}` : ''}`
     : `${WARN}⚠ 本轮未声明${RESET}`;
 
   process.stdout.write(`${line1}\n${line2}`);

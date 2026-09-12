@@ -1,0 +1,8 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-13",
+  "prompt_id": "00000000-0000-4000-8000-000000000013",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "把刚才那两行贴出来给我看看，顺便说说它为什么算一次偏移。"
+}

@@ -1,0 +1,12 @@
+{
+  "note": "后台任务通知走的也是 UserPromptSubmit，2026-09-12 13:52 实证。用户一个字都没说，却被要求声明本轮解码——纯浪费，而且会污染统计。原话仍要逐字记下（它确实进了上下文），但不注入。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "empty"
+  },
+  "state_file": {
+    "decode": null,
+    "promptField": "prompt",
+    "prompt_startswith": "<task-notification>"
+  }
+}

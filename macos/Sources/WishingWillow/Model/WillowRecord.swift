@@ -29,12 +29,14 @@ struct WillowRecord: Sendable, Equatable {
     var prompt: String?
     var promptOrigin: PromptOrigin
     var decode: String?
+    /// 模型自己压出来的 ≤6 字标签。刘海常亮层唯一放得下的东西。
+    var tag: String?
     var endedAt: Date?
 }
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, decode, endedAt
+        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, decode, tag, endedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -47,6 +49,7 @@ extension WillowRecord: Decodable {
         turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex) ?? 0
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
+        tag = try c.decodeIfPresent(String.self, forKey: .tag)
 
         // `decodeIfPresent` returns nil for both "key missing" and "key is null",
         // and those two mean different things here — so ask the container directly.

@@ -50,10 +50,8 @@ struct SessionRail: View {
 
     private func pill(_ s: SessionState) -> some View {
         HStack(spacing: 5) {
-            Circle()
-                .fill(dot(s))
-                .frame(width: 6, height: 6)
-            Text(s.workspace)
+            dot(s)
+            Text(s.tag ?? s.workspace)
                 .font(.system(size: 11, weight: s.id == selected ? .medium : .regular))
                 .lineLimit(1)
         }
@@ -63,14 +61,30 @@ struct SessionRail: View {
         .willowGlass(.capsule, tint: s.id == selected ? .accentColor : nil)
     }
 
-    private func dot(_ s: SessionState) -> Color {
-        if s.isStale { return .secondary.opacity(0.4) }
-        switch s.declaration {
-        case .declared:   return .green
-        case .undeclared: return .yellow
-        case .unreadable: return .red
-        case .awaiting:   return .secondary
+    /// 圆点编的是「谁说了什么」，不是「对不对」：
+    /// 红 = 插件读不到输入（事实）；琥珀 = 模型自己标了 ⚠（转发它的判断）；
+    /// 空心 = 本轮没声明（事实）；中性实心 = 声明了。
+    ///
+    /// **已声明不用绿色** —— 绿色会被读成「已核对、没问题」，而这个工具
+    /// 从不核对两栏是否一致。用了绿色，它就在替人做那个判断。
+    private func dot(_ s: SessionState) -> some View {
+        let size: CGFloat = 6
+        return Group {
+            if s.declaration == .undeclared {
+                Circle().strokeBorder(Color.secondary, lineWidth: 1)
+            } else {
+                Circle().fill(color(s))
+            }
         }
+        .frame(width: size, height: size)
+        .opacity(s.isStale ? 0.4 : 1)
+    }
+
+    private func color(_ s: SessionState) -> Color {
+        if s.isStale { return .secondary }
+        if s.declaration == .unreadable { return .red }
+        if s.flaggedByModel { return .orange }
+        return .secondary
     }
 }
 

@@ -1,0 +1,8 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-12",
+  "prompt_id": "00000000-0000-4000-8000-000000000012",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "<task-notification>\n<task-id>b41njjorg</task-id>\n<tool-use-id>toolu_019Paf1</tool-use-id>\n<status>failed</status>\n<summary>Background command failed with exit code 144</summary>\n</task-notification>"
+}

@@ -19,6 +19,20 @@ struct SessionState: Identifiable, Sendable, Equatable {
     let now: Date
 
     var prompt: String? { record.prompt }
+    var tag: String? {
+        guard let t = record.tag?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// 模型自己在解码行开头标了 ⚠，意思是它认为两栏不一致。
+    ///
+    /// 这是**转发**，不是判定。这个 app 里没有任何一处计算两栏是否一致 ——
+    /// 让模型判自己的解码，等于让它用产生漂移的那套默认值再答一遍。
+    /// 同理：已声明态不用绿色。绿色的意思是「检查过了，没问题」，而我们从不检查。
+    var flaggedByModel: Bool {
+        guard case .declared(let d) = declaration else { return false }
+        return d.hasPrefix("⚠")
+    }
 
     var declaration: Declaration {
         if record.prompt == nil {

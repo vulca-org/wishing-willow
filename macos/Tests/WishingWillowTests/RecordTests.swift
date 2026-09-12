@@ -38,6 +38,23 @@ struct RecordTests {
         #expect(SessionState(record: r, now: .now).declaration == .declared("去审计那个仓库"))
     }
 
+    @Test("标签解码，且 ⚠ 只转发不重算")
+    func tagAndFlag() throws {
+        let r = try decode(#"{"schema":3,"sessionId":"a","prompt":"写封回信","promptField":"prompt","decode":"⚠ 起草那封信，起草不发送","tag":"起草回信"}"#)
+        let st = SessionState(record: r, now: .now)
+        #expect(st.tag == "起草回信")
+        #expect(st.flaggedByModel == true)
+
+        let plain = try decode(#"{"schema":3,"sessionId":"b","prompt":"写封回信","promptField":"prompt","decode":"起草那封信","tag":"起草回信"}"#)
+        #expect(SessionState(record: plain, now: .now).flaggedByModel == false)
+    }
+
+    @Test("没有 tag 键的旧记录不得崩，也不得凭空造一个标签")
+    func tagAbsent() throws {
+        let r = try decode(#"{"schema":2,"sessionId":"a","prompt":"x 够长的一句请求","promptField":"prompt","decode":"读成了什么"}"#)
+        #expect(SessionState(record: r, now: .now).tag == nil)
+    }
+
     @Test("空白的 decode 等于没有 decode")
     func blankDecode() throws {
         let r = try decode(#"{"schema":2,"sessionId":"a","prompt":"x 这是一句够长的请求","promptField":"prompt","decode":"   "}"#)

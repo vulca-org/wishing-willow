@@ -5,11 +5,11 @@
 // returns, so every path here either succeeds quickly or gives up silently.
 // Nothing in this plugin is important enough to interrupt someone's work.
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 2;
+export const SCHEMA = 3;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {
@@ -138,11 +138,25 @@ function weigh(s) {
 // costs a whole turn of work in the wrong direction. Err toward reminding.
 const MIN_WEIGHT = 20;
 
+/**
+ * 信封：不是人敲进去的东西。
+ *
+ * Claude Code 会把后台任务通知、CI 事件、斜杠命令的本地输出这类东西同样送进
+ * `UserPromptSubmit`。2026-09-12 13:52 实测：一条 `<task-notification>` 让插件
+ * 要求模型声明「用户批准了什么」——而用户一个字都没说。没有请求，就没有解码。
+ *
+ * 认的是已知的几种信封头，认不出的照旧注入：多注入一次几十 token，漏一次是
+ * 一整轮走错方向。不对称在这里，宁可多。
+ */
+const SYSTEM_ENVELOPE =
+  /^\s*(?:<(?:task-notification|ci-monitor-event|system-reminder|command-name|command-message|local-command-stdout)\b|\[SYSTEM NOTIFICATION)/i;
+
 export function shouldBypass(prompt) {
   if (typeof prompt !== 'string') return true;
   const t = prompt.trim();
   if (t.length === 0) return true;
   if (t.startsWith('/')) return true;              // slash command
+  if (SYSTEM_ENVELOPE.test(t)) return true;        // 系统塞进来的，不是人说的
   if (ACK_ONLY.test(t)) return true;               // purely an acknowledgement
   if (weigh(t) < MIN_WEIGHT) return true;          // too slight to misread meaningfully
   return false;
@@ -151,4 +165,39 @@ export function shouldBypass(prompt) {
 /** Exit without disturbing anything. Never exit 2 — that erases the user's prompt. */
 export function quietExit() {
   process.exit(0);
+}
+
+/**
+ * 清掉早就没用的状态文件。
+ *
+ * 只删同时满足两条的：**写它的进程已经不在了**，而且**超过 7 天没更新**。
+ * 两条都是事实判断，不涉及内容。任何一条不满足就留着 —— 留一个过期文件的代价
+ * 是几百字节，删错一个正在用的文件的代价是那个会话的整轮记录。
+ * 只在 Stop 里调用：它不挡用户的回车。
+ */
+const PRUNE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function pruneState(keepId) {
+  try {
+    const dir = stateDir();
+    if (!existsSync(dir)) return;
+    const now = Date.now();
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue;
+      const id = name.slice(0, -5);
+      if (id === keepId) continue;
+      const p = join(dir, name);
+      let rec;
+      try { rec = JSON.parse(readFileSync(p, 'utf8')); } catch { continue; }
+      const pid = rec?.pid;
+      if (typeof pid !== 'number' || pid <= 0) continue;   // 不知道进程 → 不动
+      try { process.kill(pid, 0); continue; } catch (e) {
+        if (e?.code === 'EPERM') continue;                 // 别人的进程，活着
+      }
+      let mtime;
+      try { mtime = statSync(p).mtimeMs; } catch { continue; }
+      if (now - mtime < PRUNE_AFTER_MS) continue;
+      try { unlinkSync(p); } catch { /* 下次再说 */ }
+    }
+  } catch { /* 清理失败从来不是要紧事 */ }
 }

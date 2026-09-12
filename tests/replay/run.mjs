@@ -117,12 +117,6 @@ for (const name of caseNames) {
     } else if (expect.state_file) {
       let ok = check(name, 'state_file', state !== null, '期望有状态文件，却没有');
       if (state) {
-        if ('decode' in expect.state_file) {
-          const want = expect.state_file.decode;
-          const got = state.decode ?? null;
-          ok = check(name, 'state.decode', got === want,
-            `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
-        }
         // 键集钉死 —— 这条守的是产品最核心的一条设计线：状态文件里不得出现
         // 任何"两栏是否一致"的判定。那种字段一旦存在，就一定会在声明缺失时
         // 写错，于是重新制造这个插件要打破的沉默。
@@ -132,21 +126,19 @@ for (const name of caseNames) {
           ok = check(name, 'state.keys', JSON.stringify(got) === JSON.stringify(want),
             `多出 ${got.filter((k) => !want.includes(k)).join(',') || '—'}；少了 ${want.filter((k) => !got.includes(k)).join(',') || '—'}`) && ok;
         }
-        if ('prompt' in expect.state_file) {
-          const want = expect.state_file.prompt;
-          const got = state.prompt ?? null;
-          ok = check(name, 'state.prompt', got === want,
-            `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
-        }
-        if ('promptField' in expect.state_file) {
-          const want = expect.state_file.promptField;
-          const got = state.promptField ?? null;
-          ok = check(name, 'state.promptField', got === want,
+        // 逐键比对。**不认识的键必须报错，不能静默跳过** —— 2026-09-12 第四次假绿：
+        // 14-tag-line 期望 state.tag，而 runner 只认几个写死的键，于是这条期望被
+        // 忽略、用例在功能根本没实现的情况下变绿。检查器看不见的期望等于没写。
+        const SPECIAL = new Set(['prompt_startswith']);
+        for (const [k, want] of Object.entries(expect.state_file)) {
+          if (SPECIAL.has(k)) continue;
+          const got = state[k] ?? null;
+          ok = check(name, `state.${k}`, got === want,
             `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
         }
         if (expect.state_file.prompt_startswith) {
           const p = state.prompt ?? '';
-          ok = check(name, 'state.prompt', p.startsWith(expect.state_file.prompt_startswith),
+          ok = check(name, 'state.prompt.startswith', p.startsWith(expect.state_file.prompt_startswith),
             `prompt 应以「${expect.state_file.prompt_startswith}」开头，得到「${p.slice(0, 30)}…」`) && ok;
         }
         // prompt 必须逐字保存 —— A1 的核心，绝不允许被改写。

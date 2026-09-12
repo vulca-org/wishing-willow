@@ -7,29 +7,63 @@
 
 import { openSync, readSync, closeSync, statSync } from 'node:fs';
 import {
-  SCHEMA, readStdin, parseInput, readState, writeState, quietExit,
+  SCHEMA, readStdin, parseInput, readState, writeState, pruneState, quietExit,
 } from './_willow.mjs';
 
 // Chinese full-width and ASCII colons both, plus an English form so the plugin
 // is usable outside Chinese sessions.
 const DECODE_LINE = /^\s*(?:我读成了|我理解为|How I read it|Read as)\s*[：:]\s*(.+?)\s*$/iu;
+const TAG_LINE = /^\s*(?:标签|Tag)\s*[：:]\s*(.+?)\s*$/iu;
 
 const SCAN_LINES = 12;   // the declaration belongs at the top of a message or not at all
 
-/** Find the decode line near the start of one message. Returns null if absent. */
+/**
+ * Find the declaration near the start of one message.
+ *
+ * Lines inside a code fence, a blockquote, or an indented block are skipped:
+ * **quoting a declaration is not making one.** On 2026-09-12 the model pasted
+ * another session's two lines into a fenced block to demonstrate them, and this
+ * function recorded the quotation as that turn's declaration — the same bug then
+ * corrupted a measurement later the same day (31 declarations counted where
+ * there were 9). Returns null unless a decode line is found; a lone tag means
+ * nothing on its own.
+ */
 function scanMessage(message) {
   if (typeof message !== 'string' || !message) return null;
   let seen = 0;
+  let fence = null;
+  let decode = null;
+  let tag = null;
+
   for (const line of message.split(/\r?\n/)) {
-    if (line.trim() === '') continue;
-    if (++seen > SCAN_LINES) break;
-    const m = DECODE_LINE.exec(line);
-    if (m) {
-      const text = m[1].trim();
-      if (text.length) return text;
+    const t = line.trim();
+
+    const f = /^(`{3,}|~{3,})/.exec(t);
+    if (f) {
+      const kind = f[1][0];
+      if (fence === kind) fence = null;
+      else if (fence === null) fence = kind;
+      continue;
     }
+    if (fence !== null) continue;              // 栅栏内 = 引用
+    if (t === '') continue;
+    if (t.startsWith('>')) continue;           // 引用块
+    if (/^\s{4,}\S/.test(line)) continue;      // 缩进代码
+
+    if (++seen > SCAN_LINES) break;
+
+    if (decode === null) {
+      const m = DECODE_LINE.exec(line);
+      if (m) decode = m[1].trim() || null;     // ⚠ 若在，原样留着：那是模型自己的判断
+    }
+    if (tag === null) {
+      const m = TAG_LINE.exec(line);
+      if (m) tag = m[1].trim() || null;
+    }
+    if (decode !== null && tag !== null) break;
   }
-  return null;
+
+  return decode === null ? null : { decode, tag };
 }
 
 /** Read at most `max` bytes from the end of a file. Returns '' on any failure. */
@@ -80,7 +114,7 @@ function assistantTexts(row) {
  * declaration was recorded as absent. Read the transcript instead, and treat
  * `last_assistant_message` as the fallback for when it cannot be read.
  */
-function findDecode(input) {
+function findDeclaration(input) {
   const path = input?.transcript_path;
   if (typeof path === 'string' && path) {
     // Two bounded passes: a turn with large tool output can be several MB.
@@ -122,13 +156,15 @@ try {
   const sessionId = input.session_id;
   if (typeof sessionId !== 'string') quietExit();
 
-  const decode = findDecode(input);
+  const found = findDeclaration(input);
+  const decode = found?.decode ?? null;
+  const tag = found?.tag ?? null;
   const prev = readState(sessionId);
 
   // Only ever touch `decode` and the timestamp. `prompt` stays exactly as
   // capture.mjs wrote it — this hook has no business rewriting what you said.
   if (prev) {
-    writeState(sessionId, { ...prev, decode, updatedAt: new Date().toISOString() });
+    writeState(sessionId, { ...prev, decode, tag, updatedAt: new Date().toISOString() });
   } else {
     // Stop without a preceding capture (plugin installed mid-turn, state wiped).
     // Record what we can rather than inventing a prompt.
@@ -142,9 +178,11 @@ try {
       updatedAt: new Date().toISOString(),
       prompt: null,
       decode,
+      tag,
       endedAt: null,
     });
   }
+  pruneState(sessionId);
   process.exit(0);
 } catch {
   quietExit();
