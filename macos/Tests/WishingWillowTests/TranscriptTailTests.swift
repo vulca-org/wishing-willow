@@ -99,6 +99,25 @@ struct TranscriptTailTests {
         #expect(p.interruptedAt != nil)
     }
 
+    @Test("续接会话第一轮没有偏移：从末尾往回找与原话一致的最后一条用户消息，更早的同一句不算")
+    func locateByPrompt() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("willow-locate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("r.jsonl")
+        let p = "把这个目录整个扫一遍，先不要改。"
+        func u(_ t: String) -> String {
+            "{\"type\":\"user\",\"isSidechain\":false,\"timestamp\":\"2026-09-11T10:00:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"\(t)\"}}"
+        }
+        func a(_ d: String) -> String {
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-09-11T10:00:05.000Z\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"我读成了：\(d)\\n标签：x\"}]}}"
+        }
+        let text = [u(p), a("更早同一句的解码"), u("继续"), a("旧的解码"), u(p), a("新的解码")].joined(separator: "\n") + "\n"
+        try Data(text.utf8).write(to: path)
+        let off = TranscriptTail.locateTurnStart(path: path.path, prompt: p)
+        #expect(off != nil)
+        #expect(TranscriptFollower().progress(key: "k", path: path.path, offset: off ?? 0)?.decode == "新的解码")
+    }
+
     @Test("边写边读：半行等读到换行再解析；偏移之前的上一轮不算")
     func follower() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("willow-tail-\(UUID().uuidString)")

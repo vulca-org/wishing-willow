@@ -56,4 +56,28 @@ struct StoreOrderingTests {
         let seen = SeenStore(ephemeral: true)
         #expect(FocusRule.focus(store, seen, pinned: "done")?.id == "done")
     }
+
+    @Test("偏移为空（续接会话第一轮）也能实时读到这一轮")
+    func nullOffset() throws {
+        let d = try makeDir()
+        let tr = d.appendingPathComponent("resumed.transcript.jsonl")
+        let now = Date()
+        let p = "你直接使用配音不行吗？"
+        let rows = [
+            "{\"type\":\"user\",\"timestamp\":\"2026-09-11T18:00:00.000Z\",\"message\":{\"content\":\"前一天的请求\"}}",
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-09-11T18:00:05.000Z\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"我读成了：前一天的旧声明\"}]}}",
+            "{\"type\":\"user\",\"timestamp\":\"\(iso.format(now.addingTimeInterval(-20)))\",\"message\":{\"content\":\"\(p)\"}}",
+            "{\"type\":\"assistant\",\"timestamp\":\"\(iso.format(now.addingTimeInterval(-3)))\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"我读成了：这一轮的声明\\n标签：找开源配音\"}]}}",
+        ]
+        try Data((rows.joined(separator: "\n") + "\n").utf8).write(to: tr)
+        try write(["schema": 9, "sessionId": "resumed", "pid": Int(ProcessInfo.processInfo.processIdentifier),
+                   "cwd": "/x/c", "turnId": "tr", "updatedAt": iso.format(now.addingTimeInterval(-20)),
+                   "prompt": p, "promptField": "prompt", "origin": "user", "reminded": true,
+                   "decode": NSNull(), "turnEndedAt": NSNull(), "transcriptPath": tr.path],
+                  d.appendingPathComponent("resumed.json"))
+        let store = WillowStore(directory: d)
+        store.reload()
+        let s = store.sessions.first { $0.id == "resumed" }
+        #expect(s.flatMap { store.progress(for: $0) }?.decode == "这一轮的声明")
+    }
 }

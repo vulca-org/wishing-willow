@@ -204,6 +204,22 @@ final class WillowStore {
         onReload?()
     }
 
+    /// 续接会话第一轮没有偏移时，按原话在聊天记录里找到这一轮的开头。找到就记住；
+    /// 找不到隔 10 秒再试（文件可能还在抄历史），免得每秒都把几十 MB 读一遍。
+    private var resolvedOffsets: [String: Int] = [:]
+    private var resolveMisses: [String: Date] = [:]
+
+    private func resolvedOffset(key: String, path: String, prompt: String?) -> Int? {
+        if let o = resolvedOffsets[key] { return o }
+        if let miss = resolveMisses[key], Date().timeIntervalSince(miss) < 10 { return nil }
+        guard let prompt, let o = TranscriptTail.locateTurnStart(path: path, prompt: prompt) else {
+            resolveMisses[key] = Date()
+            return nil
+        }
+        resolvedOffsets[key] = o
+        return o
+    }
+
     /// 读进行中（以及刚被打断）各轮新增的聊天记录。只读不写。
     func refreshLive() {
         var next: [String: TurnProgress] = [:]
@@ -212,8 +228,9 @@ final class WillowStore {
         var withdrawals: [(SessionState, WithdrawKind)] = []
         for s in sessions where s.declaration == .inProgress || s.declaration == .interrupted {
             guard let pid = s.record.pid, SessionState.processIsAlive(pid),
-                  let path = s.record.transcriptPath, let off = s.record.transcriptOffset,
-                  let key = liveKey(s) else { continue }
+                  let path = s.record.transcriptPath, let key = liveKey(s),
+                  let off = s.record.transcriptOffset ?? resolvedOffset(key: key, path: path, prompt: s.record.prompt)
+            else { continue }
             guard let p = follower.progress(key: key, path: path, offset: off) else { continue }
             let old = liveProgress[key]
             if old?.decode != p.decode || old?.steps.count != p.steps.count
@@ -238,6 +255,8 @@ final class WillowStore {
         follower.forget(keeping: Set(next.keys))
         let current = Set(sessions.compactMap(liveKey))
         arrivedTurns.formIntersection(current)
+        resolvedOffsets = resolvedOffsets.filter { current.contains($0.key) }
+        resolveMisses = resolveMisses.filter { current.contains($0.key) }
 
         // 打断要立刻反映到声明状态上，不等下一次 5 秒的整体扫描。
         if interruptChanged {

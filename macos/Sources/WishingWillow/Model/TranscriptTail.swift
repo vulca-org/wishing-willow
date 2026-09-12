@@ -147,6 +147,48 @@ enum TranscriptTail {
         return text.count > 60 ? String(text.prefix(59)) + "…" : text
     }
 
+    /// 偏移为空时（续接会话的第一轮：Claude Code 按回车几毫秒后才新建文件，并把全部历史抄进去），
+    /// 从文件末尾往回找与原话一致的最后一条真实用户消息，返回那一行的起始字节。
+    /// **不能当成 0**：2026-09-12 实测那个会话抄进来 10.3 MB 历史，从头读会把前一天的旧声明当成这一轮的。
+    static func locateTurnStart(path: String, prompt: String) -> Int? {
+        let want = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !want.isEmpty, let h = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? h.close() }
+        let size = Int((try? h.seekToEnd()) ?? 0)
+        let window = min(size, 32 << 20)
+        let base = size - window
+        try? h.seek(toOffset: UInt64(base))
+        guard let data = try? h.read(upToCount: window), !data.isEmpty else { return nil }
+        let needle = Data("\"type\":\"user\"".utf8)
+        var end = data.endIndex
+        var hit: Int? = nil
+        while end > data.startIndex {
+            let lineStart = data[..<end].lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+            if lineStart == data.startIndex && base > 0 { break }          // 窗口第一段是半行
+            let line = data[lineStart..<end]
+            if !line.isEmpty, line.range(of: needle) != nil,
+               let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+               userText(obj) == want {
+                hit = base + (lineStart - data.startIndex)
+                break                                                       // 往回找到的第一条就是最后一条
+            }
+            end = lineStart == data.startIndex ? data.startIndex : data.index(before: lineStart)
+        }
+        return hit
+    }
+
+    /// 真实用户消息的文字（不是工具结果、不是子代理、不是元消息），与插件判定一致。
+    static func userText(_ row: [String: Any]) -> String? {
+        guard (row["type"] as? String) == "user", (row["isSidechain"] as? Bool) != true,
+              (row["isMeta"] as? Bool) != true else { return nil }
+        let c = (row["message"] as? [String: Any])?["content"]
+        if let s = c as? String { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let arr = c as? [[String: Any]],
+              !arr.contains(where: { ($0["type"] as? String) == "tool_result" }) else { return nil }
+        return arr.compactMap { ($0["type"] as? String) == "text" ? $0["text"] as? String : nil }
+            .joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func matches(_ re: NSRegularExpression, _ s: String) -> Bool {
         re.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
     }
