@@ -114,6 +114,9 @@ final class WillowStore {
     private var watcher: DirectoryWatcher?
     private var poll: Timer?
 
+    /// 设置里的模型（如 "opus[1m]"），决定上下文窗口按多大算。启动时读一次。
+    let settingsModel: String? = ContextWindow.settingsModel()
+
     init(directory: URL = WillowStore.defaultDirectory) {
         self.directory = directory
     }
@@ -261,7 +264,7 @@ final class WillowStore {
             let old = liveProgress[key]
             if old?.decode != p.decode || old?.steps.count != p.steps.count
                 || old?.firstWriteAt != p.firstWriteAt || old?.thinkingSeen != p.thinkingSeen
-                || old?.pendingChoice != p.pendingChoice { changed = true }
+                || old?.pendingChoice != p.pendingChoice || old?.lastUsage != p.lastUsage { changed = true }
             if (old?.interruptedAt == nil) != (p.interruptedAt == nil) { interruptChanged = true }
             // 进入或离开「等你选择」也要立刻重建：它决定会话算不算过期。
             if (old?.pendingChoice == nil) != (p.pendingChoice == nil) { interruptChanged = true }

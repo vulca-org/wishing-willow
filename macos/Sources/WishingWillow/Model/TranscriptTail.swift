@@ -12,6 +12,8 @@ struct TurnProgress: Sendable, Equatable {
     struct Step: Sendable, Equatable {
         var at: Date?
         var text: String
+        /// 工具名（Bash / Read / Edit …），界面据此配 SF Symbol。
+        var tool: String? = nil
     }
 
     var firstWriteAt: Date?
@@ -44,6 +46,14 @@ struct TurnProgress: Sendable, Equatable {
     }
     var pendingChoice: Choice?
 
+    /// 这一轮每次请求的 token 用量，按 message.id 去重（同一条消息流式写成 2–5 行，usage 相同）。
+    var usageByMessage: [String: TokenUsage] = [:]
+    /// 最近一次请求的用量：上下文占用与缓存命中看这一次。
+    var lastUsage: TokenUsage?
+    var model: String?
+    var outputTokens: Int { usageByMessage.values.reduce(0) { $0 + $1.output } }
+    var requestCount: Int { usageByMessage.count }
+
     mutating func ingest(_ row: [String: Any]) {
         guard (row["isSidechain"] as? Bool) != true else { return }
         let at = (row["timestamp"] as? String).flatMap(WillowRecord.parseISO8601)
@@ -56,6 +66,12 @@ struct TurnProgress: Sendable, Equatable {
         if firstWriteAt == nil { firstWriteAt = at }
         if let at { lastEventAt = at }
         let message = row["message"] as? [String: Any]
+        // 打断时 Claude Code 会写一条 model 为 "<synthetic>"、用量全 0 的 assistant 行：不算请求，也不能把上下文刷成 0。
+        if let m = message, let u = TokenUsage(json: m["usage"] as? [String: Any]), u.context > 0 {
+            usageByMessage[m["id"] as? String ?? "row-\(usageByMessage.count)"] = u
+            lastUsage = u
+            if let name = m["model"] as? String, !name.hasPrefix("<") { model = name }
+        }
         if let s = message?["content"] as? String {
             absorb(s, at: at)
             return
@@ -69,7 +85,8 @@ struct TurnProgress: Sendable, Equatable {
                 if let s = b["text"] as? String { absorb(s, at: at) }
             case "tool_use":
                 steps.append(Step(at: at, text: TranscriptTail.describe(
-                    tool: b["name"] as? String ?? "", input: b["input"] as? [String: Any] ?? [:])))
+                    tool: b["name"] as? String ?? "", input: b["input"] as? [String: Any] ?? [:]),
+                    tool: b["name"] as? String))
                 noteChoice(b, at: at)
             default:
                 break

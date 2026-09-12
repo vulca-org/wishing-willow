@@ -59,10 +59,23 @@ struct TimelineTests {
         #expect(done.progress.steps.count == 1)
     }
 
-    @Test("刻度步长：主刻度间隔不小于约 64pt，按总时长取整数秒")
-    func majorStep() {
-        #expect(TimelineRuler.majorStep(total: 57, width: 464) == 10)
-        #expect(TimelineRuler.majorStep(total: 352, width: 464) == 60)
-        #expect(TimelineRuler.majorStep(total: 1912, width: 464) == 300)
+    @Test("进度条分段：回车到写出理解是灰、之后是白、提问到现在是蓝；结束的一轮不画等待段")
+    func barSegments() {
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        var p = TurnProgress()
+        p.declaredAt = t0.addingTimeInterval(10)
+        p.pendingChoice = TurnProgress.Choice(id: "q", kind: .question, at: t0.addingTimeInterval(30),
+                                              header: nil, question: nil, options: [], count: 1)
+        let live = TurnTimeline(startedAt: t0, endedAt: nil, progress: p)
+        #expect(TurnBar.segments(live, now: t0.addingTimeInterval(40)) == [
+            .init(kind: .before, from: 0, to: 0.25),
+            .init(kind: .after, from: 0.25, to: 0.75),
+            .init(kind: .waiting, from: 0.75, to: 1),
+        ])
+        let done = TurnTimeline(startedAt: t0, endedAt: t0.addingTimeInterval(40), progress: p)
+        #expect(TurnBar.segments(done, now: t0.addingTimeInterval(40)) == [
+            .init(kind: .before, from: 0, to: 0.25),
+            .init(kind: .after, from: 0.25, to: 1),
+        ])
     }
 }

@@ -17,12 +17,12 @@ struct TurnView: View {
             if state.record.isSystemMessage {
                 row(label: "这一轮", text: "系统消息（\(PromptSource.describe(state.prompt))），不是你说的", tone: .secondary)
             } else {
-                row(label: "你批准的", text: state.prompt, tone: .primary)
+                row(label: "你的要求", text: state.prompt, tone: .primary)
             }
 
             switch state.declaration {
             case .declared(let d):
-                row(label: "我读成了", text: d, tone: .primary)
+                row(label: "Claude 的理解", text: d, tone: .primary)
             case .undeclared:
                 banner(
                     icon: "circle.dotted",

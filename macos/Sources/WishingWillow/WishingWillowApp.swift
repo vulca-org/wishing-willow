@@ -58,7 +58,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 前一半停在收起态，后一半展开 —— 两个状态各拍一张。
             if !PresentDemo.passive {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
-                    if CommandLine.arguments.contains("--detail") { c.presentDetail() } else { c.presentExpanded() }
+                    if CommandLine.arguments.contains("--detail") {
+                        c.presentDetail()
+                    } else if !CommandLine.arguments.contains("--pill-cycle") {
+                        c.presentExpanded()
+                    }
+                }
+                // --expand-then-detail：先展开，1.6 秒后再打开面板——走用户真实的「悬停展开 → 点击」路径，
+                // 录「展开态换成面板」那一段过渡（用户报过文字叠加）。
+                if CommandLine.arguments.contains("--expand-then-detail") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2 + 1.6) { c.presentDetail() }
+                }
+                // --pill-cycle：展开（胶囊吸回岛里）→ 收起（胶囊滴出去）→ 胶囊悬停预览 → 离开 → 岛悬停鼓起 → 复原。
+                // 录第二个会话胶囊的出场、收回与悬停动效。
+                if CommandLine.arguments.contains("--pill-cycle") {
+                    let t0 = 3.5
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0) { c.presentExpanded() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 2.0) { c.presentCollapse() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 4.0) { c.presentPillHover(true) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 5.5) { c.presentPillHover(false) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 6.5) { c.presentHoverBump(true) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 7.5) { c.presentHoverBump(false) }
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold) {
