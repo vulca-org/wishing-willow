@@ -47,7 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var island: IslandController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let c = IslandController(store: store)
+        // 样例演示用不落盘的已读记录：先前演示把样例会话标成已读写进了真实的 seen.json，
+        // 之后拍收起态时两翼全缩回刘海——拍到的是上一次演示留下的状态。
+        let demo = PresentDemo.seconds != nil && !PresentDemo.real
+        let c = IslandController(store: store, seen: demo ? SeenStore(ephemeral: true) : SeenStore())
         island = c
         c.start()
 

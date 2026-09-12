@@ -25,6 +25,52 @@ enum FocusRule {
 
     static func others(_ store: WillowStore) -> Int { max(0, live(store).count - 1) }
 
+    /// 第二个会话：进分离胶囊的那个。HIG 的多活动做法——一个贴着摄像头占两翼，另一个分离成小胶囊。
+    /// 只挑有话说的：看过且空闲的会话不占胶囊，胶囊里放一个 logo 等于没放。
+    static func secondary(_ store: WillowStore, _ seen: SeenStore, primary: SessionState?) -> SessionState? {
+        let l = live(store).filter { $0.id != primary?.id }
+        return l.first { $0.declaration == .unreadable }
+            ?? l.first { store.recentWithdraw[$0.id] != nil }
+            ?? l.first { $0.declaration == .inProgress }
+            ?? l.first { pill($0, seen, store) != nil }
+    }
+
+    /// 收起态的一对：主会话占两翼，第二个进胶囊。
+    /// 主会话无话可说（看过且空闲）而另一个有话说时，把那个提成主会话——
+    /// 否则屏幕上是一个缩回的空刘海加一个挤在旁边的小胶囊。钉住的不提换。
+    static func pair(_ store: WillowStore, _ seen: SeenStore, pinned: String?) -> (primary: SessionState?, secondary: SessionState?) {
+        let p = focus(store, seen, pinned: pinned)
+        let s = secondary(store, seen, primary: p)
+        if pinned == nil, let p, label(p, seen, store) == nil, let s {
+            return (s, secondary(store, seen, primary: s))
+        }
+        return (p, s)
+    }
+
+    /// 主会话与胶囊之外还在跑的会话数，胶囊上写成「+N」。
+    static func extra(_ store: WillowStore, primary: SessionState?, secondary: SessionState?) -> Int {
+        live(store).filter { $0.id != primary?.id && $0.id != secondary?.id }.count
+    }
+
+    /// 胶囊里放什么。宽度只够一个符号加两三个字，所以是枚举，不是一句话。
+    enum Pill: Equatable {
+        case broken
+        case withdraw(interrupted: Bool)
+        case running(since: Date?)
+        case fresh(tag: String?, flagged: Bool)
+        case silent
+    }
+
+    static func pill(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Pill? {
+        if s.declaration == .unreadable { return .broken }
+        if let w = store.recentWithdraw[s.id] { return .withdraw(interrupted: w.kind == .interrupted) }
+        if s.declaration == .inProgress { return .running(since: s.record.updatedAt) }
+        guard seen.isUnread(s) else { return nil }
+        if s.declaration == .undeclared { return .silent }
+        if case .declared = s.declaration { return .fresh(tag: s.tag, flagged: s.flaggedByModel) }
+        return nil
+    }
+
     struct Label { let text: String; let carried: Bool }
 
     /// 只在有话说的时候占宽度。
