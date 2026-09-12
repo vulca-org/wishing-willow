@@ -12,13 +12,35 @@ import SwiftUI
 @MainActor
 enum Snapshot {
 
+    enum Kind { case panel, strip, detail }
+
     struct Scene {
         let name: String
         let files: [(String, String)]   // 文件名 → JSON
+        var kind: Kind = .panel
+        var seen: [String] = []         // 这些会话的当前一轮算「已读」
+        var logs: [(String, String)] = []
+    }
+
+    /// 把常亮层放进一段真实尺寸的菜单栏里，好看出它到底占多大。
+    struct MenuBarStrip: View {
+        let store: WillowStore
+        let seen: SeenStore
+        var body: some View {
+            HStack(spacing: 10) {
+                Spacer()
+                CompactLabel(store: store, seen: seen)
+                Text("100%   16:52").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .frame(width: 560, height: 28)
+            .background(Color(white: 0.10))
+            .environment(\.colorScheme, .dark)
+        }
     }
 
     static func run(outputDirectory: String) -> Int32 {
-        WillowGlass.offscreen = true
+        Offscreen.isRendering = true
         let fm = FileManager.default
         let outDir = URL(fileURLWithPath: outputDirectory, isDirectory: true)
         try? fm.createDirectory(at: outDir, withIntermediateDirectories: true)
@@ -31,11 +53,23 @@ enum Snapshot {
             for (name, json) in scene.files {
                 try? Data(json.utf8).write(to: stateDir.appendingPathComponent(name))
             }
+            for (name, jsonl) in scene.logs {
+                try? Data(jsonl.utf8).write(to: stateDir.appendingPathComponent(name))
+            }
 
             let store = WillowStore(directory: stateDir)
             store.reload()
 
-            let renderer = ImageRenderer(content: PanelView(store: store).frame(width: 460))
+            let seenStore = SeenStore(ephemeral: true)
+            for id in scene.seen { seenStore.markSeen(sessionId: id, turnId: "\(id)-turn") }
+
+            let content: AnyView = switch scene.kind {
+            case .panel:   AnyView(PanelView(store: store).frame(width: 460))
+            case .strip:   AnyView(MenuBarStrip(store: store, seen: seenStore))
+            case .detail:  AnyView(DetailView(store: store, seen: seenStore).frame(width: 640, height: 420))
+            }
+
+            let renderer = ImageRenderer(content: content)
             renderer.scale = 2
 
             guard let image = renderer.nsImage,
@@ -85,10 +119,22 @@ enum Snapshot {
         case .some(let v): field = ",\"promptField\":\(q(v))"
         }
         return """
-        {"schema":2,"sessionId":"\(id)","pid":\(pid),"cwd":"\(cwd)","turnId":"t",\
-        "turnIndex":\(turn),"updatedAt":"\(stamp ?? now)","prompt":\(q(prompt))\(field),\
+        {"schema":2,"sessionId":"\(id)","pid":\(pid),"cwd":"\(cwd)","turnId":"\(id)-turn",\
+        "turnIndex":\(turn),"updatedAt":"\(stamp ?? now)","prompt":\(q(prompt))\(field),"reminded":true,\
         "decode":\(q(decode)),"tag":\(q(tag)),"endedAt":null}
         """
+    }
+
+    /// 三轮样例：一轮两栏不一致、一轮问了没答、一轮压根没问。
+    /// 这三种在窗口里必须长得不一样 —— 合成一句「无声明」就是在制造
+    /// 这个产品本该打破的那种沉默。
+    private static var sampleLog: String {
+        let rows = [
+            #"{"turnId":"t1","at":"2026-09-12T16:21:51.000Z","endedAt":"2026-09-12T16:26:40.000Z","reminded":true,"prompt":"继续吧，接下来怎么做？另外那个档案馆的外联要放进去吗？","decode":"⚠ 先把披露时限文件做掉，然后回答档案馆那条线该放在哪。","tag":"做披露文件"}"#,
+            #"{"turnId":"t2","at":"2026-09-12T16:27:54.000Z","endedAt":"2026-09-12T16:28:02.000Z","reminded":false,"prompt":"好的 继续吧","decode":null,"tag":null}"#,
+            #"{"turnId":"t3","at":"2026-09-12T16:31:10.000Z","endedAt":"2026-09-12T16:33:05.000Z","reminded":true,"prompt":"把这个目录下所有脚本的错误处理过一遍，先不要改。","decode":null,"tag":null}"#,
+        ]
+        return rows.joined(separator: "\n") + "\n"
     }
 
     private static var scenes: [Scene] {
@@ -118,6 +164,13 @@ enum Snapshot {
         // 每一幕里把要展示的那个会话排在最前 —— 靠的是真实的排序规则（活的在前、最近更新在前），
         // 不是给 View 塞一个选中项。
         return [
+            .init(name: "05-strip-flagged",
+                  files: [("a.json", drifting), ("b.json", undeclared), ("d.json", stale)], kind: .strip),
+            .init(name: "06-strip-quiet",
+                  files: [("a.json", drifting), ("b.json", undeclared), ("d.json", stale)], kind: .strip,
+                  seen: ["sess-a", "sess-b"]),
+            .init(name: "07-strip-broken",
+                  files: [("c.json", broken), ("d.json", stale)], kind: .strip),
             .init(name: "01-declared-but-drifting",
                   files: [("a.json", drifting), ("b.json", undeclared), ("d.json", stale)]),
             .init(name: "02-undeclared",
@@ -125,6 +178,9 @@ enum Snapshot {
             .init(name: "03-plugin-broken",
                   files: [("c.json", broken), ("d.json", stale)]),
             .init(name: "04-empty", files: []),
+            .init(name: "08-detail",
+                  files: [("a.json", drifting), ("b.json", undeclared), ("d.json", stale)],
+                  kind: .detail, logs: [("sess-a.log.jsonl", sampleLog)]),
         ]
     }
 }

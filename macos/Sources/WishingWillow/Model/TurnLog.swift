@@ -1,0 +1,64 @@
+import Foundation
+
+/// One finished turn, as the plugin appended it to `<session>.log.jsonl`.
+///
+/// The log is an index, not a source of truth: everything load-bearing here can
+/// be recomputed from Claude Code's own transcript, and the transcript wins if
+/// they ever disagree. `promptField` is the one field the transcript does not
+/// know, so it is diagnostic only — no count may rest on it.
+struct TurnLogEntry: Sendable, Equatable, Identifiable {
+    var id: String { (turnId ?? "") + (endedAt.map { "\($0.timeIntervalSince1970)" } ?? "") }
+
+    var turnId: String?
+    var at: Date?
+    var endedAt: Date?
+    /// Whether the plugin asked this turn at all. Without it, "we never asked"
+    /// and "we asked and got nothing" are the same row — and every statistic
+    /// built on that confusion is wrong.
+    var reminded: Bool?
+    var prompt: String?
+    var decode: String?
+    var tag: String?
+
+    var declared: Bool { decode?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+    var flaggedByModel: Bool { decode?.hasPrefix("⚠") == true }
+
+    /// How long the turn took. Shown because a long turn that drifted is the
+    /// expensive kind.
+    var duration: TimeInterval? {
+        guard let at, let endedAt else { return nil }
+        return endedAt.timeIntervalSince(at)
+    }
+}
+
+extension TurnLogEntry: Decodable {
+    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, promptField, prompt, decode, tag }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
+        reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)
+        prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
+        decode = try c.decodeIfPresent(String.self, forKey: .decode)
+        tag = try c.decodeIfPresent(String.self, forKey: .tag)
+        at = (try c.decodeIfPresent(String.self, forKey: .at)).flatMap(WillowRecord.parseISO8601)
+        endedAt = (try c.decodeIfPresent(String.self, forKey: .endedAt)).flatMap(WillowRecord.parseISO8601)
+    }
+}
+
+enum TurnLog {
+    /// Read a session's log. A half-written line is skipped, not fatal — the
+    /// plugin renames into place, but a reader should never assume that.
+    static func read(sessionId: String, directory: URL) -> [TurnLogEntry] {
+        let url = directory.appendingPathComponent("\(sessionId).log.jsonl")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        var out: [TurnLogEntry] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = line.data(using: .utf8),
+                  let e = try? JSONDecoder().decode(TurnLogEntry.self, from: data)
+            else { continue }
+            out.append(e)
+        }
+        return out
+    }
+}

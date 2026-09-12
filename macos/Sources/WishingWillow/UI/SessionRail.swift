@@ -45,7 +45,7 @@ struct SessionRail: View {
     /// `GlassEffectContainer` 在离屏渲染里什么都不画，连子视图一起吞掉。
     @ViewBuilder
     private func container(@ViewBuilder _ content: () -> some View) -> some View {
-        if WillowGlass.offscreen { content() } else { GlassEffectContainer(spacing: 6, content: content) }
+        if Offscreen.isRendering { content() } else { GlassEffectContainer(spacing: 6, content: content) }
     }
 
     private func pill(_ s: SessionState) -> some View {

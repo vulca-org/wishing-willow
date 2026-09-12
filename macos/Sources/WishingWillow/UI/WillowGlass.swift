@@ -7,11 +7,6 @@ import SwiftUI
 /// 加第四处必须动这个文件。二是给离屏渲染一条退路：`glassEffect` 在没有活合成器
 /// 的时候不只是不画玻璃，**连它包住的内容一起吞掉**，于是 `--snapshot` 出来的图里
 /// 那三处会是空白 —— 又一次「坏掉的样子和正常的样子分不开」。
-enum WillowGlass {
-    /// `--snapshot` 模式下置为 true。只影响渲染退路，不影响任何逻辑。
-    nonisolated(unsafe) static var offscreen = false
-}
-
 enum WillowGlassShape {
     case capsule
     case rounded(CGFloat)
@@ -28,7 +23,7 @@ private struct WillowGlassModifier: ViewModifier {
 
         switch shape {
         case .capsule:
-            if WillowGlass.offscreen {
+            if Offscreen.isRendering {
                 content.background(base, in: .capsule)
             } else {
                 content
@@ -36,7 +31,7 @@ private struct WillowGlassModifier: ViewModifier {
                     .glassEffect(glass, in: .capsule)
             }
         case .rounded(let r):
-            if WillowGlass.offscreen {
+            if Offscreen.isRendering {
                 content.background(base, in: .rect(cornerRadius: r))
             } else {
                 content

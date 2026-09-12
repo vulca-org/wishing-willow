@@ -28,6 +28,8 @@ struct WillowRecord: Sendable, Equatable {
     var updatedAt: Date?
     var prompt: String?
     var promptOrigin: PromptOrigin
+    /// 这一轮插件到底有没有注入提醒。缺了它，「没问」和「问了没答」是同一行。
+    var reminded: Bool?
     var decode: String?
     /// 模型自己压出来的 ≤6 字标签。刘海常亮层唯一放得下的东西。
     var tag: String?
@@ -36,7 +38,7 @@ struct WillowRecord: Sendable, Equatable {
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, decode, tag, endedAt
+        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, decode, tag, endedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -48,6 +50,7 @@ extension WillowRecord: Decodable {
         turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
         turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
+        reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
 
