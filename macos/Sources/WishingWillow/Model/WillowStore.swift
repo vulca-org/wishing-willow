@@ -53,6 +53,26 @@ final class WillowStore {
     }
 
     private func liveKey(_ s: SessionState) -> String? { s.record.turnId.map { "\(s.id)|\($0)" } }
+
+    private func attachLive(_ s: SessionState, now: Date) -> SessionState {
+        let lp = liveKey(s).flatMap { liveProgress[$0] }
+        return SessionState(record: s.record, now: now,
+                            liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
+                            liveInterruptedAt: lp?.interruptedAt)
+    }
+
+    /// 活的在前；再按最近一次动静排序——状态文件的时间和实时读到的最后一次落盘，取较晚的。
+    /// 只看状态文件时间时，正在跑的会话（状态文件一轮内不更新）会排到刚结束的会话后面。
+    static func sort(_ xs: [SessionState]) -> [SessionState] {
+        xs.sorted { a, b in
+            if a.isStale != b.isStale { return !a.isStale }
+            return activity(a) > activity(b)
+        }
+    }
+
+    static func activity(_ s: SessionState) -> Date {
+        [s.record.updatedAt, s.liveLastEvent].compactMap { $0 }.max() ?? .distantPast
+    }
     private let follower = TranscriptFollower()
     /// 已经触发过「声明到达」的轮次（会话|轮次）。实时读先到、Stop 后到，只展开一次。
     private var arrivedTurns: Set<String> = []
@@ -142,6 +162,12 @@ final class WillowStore {
                                       liveLastEvent: lp?.lastEventAt, liveInterruptedAt: lp?.interruptedAt))
         }
 
+        // 先排一次、读实时进度，再把实时事件挂回去——陈旧判定与排序都要用到它。
+        // 以前要等下一次扫描（5 秒后）才挂上：app 刚启动时，状态文件超过 10 分钟没更新的进行中轮次被误判过期。
+        sessions = Self.sort(found)
+        refreshLive()
+        found = sessions.map { attachLive($0, now: now) }
+
         // 一轮刚开始 = turnId 变了、还没有解码、而且这一轮确实问了。
         var started: [SessionState] = []
         for s in found {
@@ -153,11 +179,7 @@ final class WillowStore {
             }
         }
 
-        // 活的在前，然后按最近更新排序。
-        sessions = found.sorted {
-            if $0.isStale != $1.isStale { return !$0.isStale }
-            return ($0.record.updatedAt ?? .distantPast) > ($1.record.updatedAt ?? .distantPast)
-        }
+        sessions = Self.sort(found)
 
         // 首次扫描不算「刚开始」——那只是 app 启动时看到的既有状态。
         if primed, let s = started.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
@@ -178,7 +200,6 @@ final class WillowStore {
         if primed, let s = arrived.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
             onDeclarationArrived?(s)
         }
-        refreshLive()
         primed = true
         onReload?()
     }
@@ -221,12 +242,12 @@ final class WillowStore {
         // 打断要立刻反映到声明状态上，不等下一次 5 秒的整体扫描。
         if interruptChanged {
             let now = Date()
-            sessions = sessions.map { s in
+            sessions = Self.sort(sessions.map { s in
                 let lp = liveKey(s).flatMap { next[$0] }
                 return SessionState(record: s.record, now: now,
                                     liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
                                     liveInterruptedAt: lp?.interruptedAt)
-            }
+            })
             changed = true
         }
         for (s, kind) in withdrawals {

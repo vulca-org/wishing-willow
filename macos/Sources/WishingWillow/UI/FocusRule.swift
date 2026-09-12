@@ -12,8 +12,10 @@ enum FocusRule {
         store.sessions.filter { !$0.isStale }
     }
 
-    static func focus(_ store: WillowStore, _ seen: SeenStore) -> SessionState? {
+    static func focus(_ store: WillowStore, _ seen: SeenStore, pinned: String? = nil) -> SessionState? {
         let l = live(store)
+        // 钉住的会话优先：声明到达或撤回时，展开的必须是那个会话，不是排第一的。
+        if let pinned, let p = l.first(where: { $0.id == pinned }) { return p }
         return l.first { $0.declaration == .unreadable }
             ?? l.first { store.recentWithdraw[$0.id] != nil }
             ?? l.first { seen.isUnread($0) && $0.flaggedByModel }

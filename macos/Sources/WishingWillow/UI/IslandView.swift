@@ -9,6 +9,8 @@ final class IslandState {
     var shapeSize: CGSize = .zero
     /// 点击后的面板态：灵动岛再长大一档。
     var detail = false
+    /// 声明到达或撤回的那个会话，展开期间钉住。
+    var pinned: String?
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、下方两角圆，和刘海连成一块。
@@ -27,7 +29,7 @@ struct IslandView: View {
     let onClick: () -> Void
     let onClose: () -> Void
 
-    private var focus: SessionState? { FocusRule.focus(store, seen) }
+    private var focus: SessionState? { FocusRule.focus(store, seen, pinned: state.pinned) }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -45,7 +47,7 @@ struct IslandView: View {
                         .transition(.opacity)
                 } else if state.expanded {
                     // 内容固定宽度，形状长大时被裁切着逐渐露出——不在长大过程中反复换行。
-                    IslandExpandedContent(store: store, seen: seen)
+                    IslandExpandedContent(store: store, seen: seen, pinned: state.pinned)
                         .frame(width: IslandController.expandedWidth, alignment: .topLeading)
                         .transition(.opacity)
                 } else if let f = focus, let l = wingLabel {
@@ -153,8 +155,9 @@ struct IslandView: View {
 struct IslandExpandedContent: View {
     let store: WillowStore
     let seen: SeenStore
+    var pinned: String? = nil
 
-    private var focus: SessionState? { FocusRule.focus(store, seen) }
+    private var focus: SessionState? { FocusRule.focus(store, seen, pinned: pinned) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {

@@ -57,10 +57,10 @@ final class IslandController {
         ))
         panel.contentView = host
 
-        store.onDeclarationArrived = { [weak self] _ in self?.flash() }
+        store.onDeclarationArrived = { [weak self] s in self?.flash(pinning: s.id) }
         store.onReload = { [weak self] in self?.layout(animated: true) }
         store.onLiveChange = { [weak self] in self?.layout(animated: true) }
-        store.onWithdraw = { [weak self] _, kind in self?.withdraw(kind) }
+        store.onWithdraw = { [weak self] s, kind in self?.withdraw(kind, pinning: s.id) }
         store.start()
         state.shapeSize = targetShapeSize(expanded: false)
         placeStage(state.shapeSize)
@@ -95,7 +95,7 @@ final class IslandController {
         if state.detail { return DetailView.size }
         let g = notchGeometry()
         if expanded { return CGSize(width: Self.expandedWidth, height: expandedHeight()) }
-        let wings = FocusRule.focus(store, seen).flatMap { FocusRule.label($0, seen, store) } != nil
+        let wings = FocusRule.focus(store, seen, pinned: state.pinned).flatMap { FocusRule.label($0, seen, store) } != nil
         return CGSize(width: g.width + (wings ? Self.wing * 2 : 0), height: g.height)
     }
 
@@ -143,7 +143,7 @@ final class IslandController {
     /// 按内容量出展开高度，上下限兜住极端情况。
     private func expandedHeight() -> CGFloat {
         let probe = NSHostingController(rootView:
-            IslandExpandedContent(store: store, seen: seen).frame(width: Self.expandedWidth))
+            IslandExpandedContent(store: store, seen: seen, pinned: state.pinned).frame(width: Self.expandedWidth))
         let fit = probe.sizeThatFits(in: CGSize(width: Self.expandedWidth, height: 10_000))
         return max(56, min(260, ceil(fit.height)))   // 下限 96 时一行内容会被撑出一块黑
     }
@@ -163,7 +163,7 @@ final class IslandController {
         if state.detail { return }                          // 面板打开时悬停不收放
         if inside {
             autoCollapse?.invalidate()
-            if let f = FocusRule.focus(store, seen) { seen.markSeen(f) }
+            if let f = FocusRule.focus(store, seen, pinned: state.pinned) { seen.markSeen(f) }
             setExpanded(true, reason: "hover-in")
         } else {
             // 展开时面板在鼠标下面变大，会误报一次「离开」。等一拍再看鼠标还在不在里面。
@@ -175,9 +175,10 @@ final class IslandController {
     }
 
     /// 一轮刚开始：静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
-    private func flash() {
+    private func flash(pinning id: String? = nil) {
         if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored declaration-arrived"); return }
         if state.detail { return }
+        state.pinned = id
         setExpanded(true, reason: "declaration-arrived")
         autoCollapse?.invalidate()
         autoCollapse = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
@@ -190,9 +191,10 @@ final class IslandController {
 
     /// 撤回：两翼换成「已撤回 / 撤回排队」（由 FocusRule 读 recentWithdraw），停一会儿后弹回刘海。
     /// 若正展开着且是打断，让「你撤回了这一轮」停 1.8 秒再收。
-    private func withdraw(_ kind: WillowStore.WithdrawKind) {
+    private func withdraw(_ kind: WillowStore.WithdrawKind, pinning id: String) {
         if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored withdraw \(kind)"); return }
         demoLog("withdraw \(kind)")
+        if state.expanded { state.pinned = id }
         layout(animated: true)
         guard kind == .interrupted, state.expanded, !state.detail else { return }
         autoCollapse?.invalidate()
@@ -205,6 +207,15 @@ final class IslandController {
         guard state.expanded != on else { return }
         // 每次展开/收回都记原因 —— 真实截图里「该展开的时候是收起的」，不记原因就只能猜。
         demoLog("expanded=\(on) reason=\(reason)")
+        // 收起后半秒再松开钉住——立刻松开的话，收起动画途中内容会跳成另一个会话。
+        if !on, let pin = state.pinned {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, !self.state.expanded, self.state.pinned == pin else { return }
+                self.state.pinned = nil
+                self.layout(animated: true)
+            }
+        }
         let target = targetShapeSize(expanded: on)
         withAnimation(.spring(response: on ? 0.42 : 0.34, dampingFraction: on ? 0.7 : 0.86)) {
             state.expanded = on
