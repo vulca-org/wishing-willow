@@ -76,6 +76,7 @@ struct DetailView: View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Text("最近的轮次").font(.system(size: 12, weight: .semibold))
+                DemoMark()
                 Spacer(minLength: 0)
             }
             .padding(.leading, 16).padding(.trailing, 10)
@@ -311,7 +312,7 @@ struct DetailView: View {
         return HStack(spacing: 0) {
             StatCell(label: status.map { "上下文 · \(ClaudeStatus.compact($0.contextUsed))/\(ClaudeStatus.compact($0.window))" } ?? "上下文",
                      value: status.map { IslandExpandedContent.percent($0.usedFraction) } ?? "—",
-                     tint: status.map { ClaudeStatusGlyph.ringColor($0.remaining) } ?? Ink.tertiary) {
+                     tint: status.map { DuoGlyph.ringColor($0.remaining) } ?? Ink.tertiary) {
                 if let status { ContextGauge(used: status.usedFraction) }
             }
             StatDivider()

@@ -201,9 +201,10 @@ struct CompactWings: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) {
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
-                StatusGlyph(store: store, seen: seen, session: session)
+                DemoMark(compact: true)
+                WingStatus(store: store, seen: seen, session: session, size: 20)
             }
             .padding(.trailing, 9)
             .frame(maxWidth: .infinity)
@@ -233,72 +234,45 @@ struct CompactWings: View {
     }
 }
 
-/// 左翼与展开态左耳的状态符号：只放真的在走或真的发生过的事。
-struct StatusGlyph: View {
+/// 左翼与展开态左耳：iPhone Duo 式的合一状态图标 + 一个真在走的数（计时，或结束了多久）。
+/// 图标先前放在展开态右上角，用户指出位置应在折叠态左翼（2026-09-13）。
+struct WingStatus: View {
     let store: WillowStore
     let seen: SeenStore
     let session: SessionState
+    var size: CGFloat = 18
 
     var body: some View {
-        let f = session
-        if let w = store.recentWithdraw[f.id] {
-            // 撤回：箭头跳一下；打断时计时停在撤回那一刻并划掉。
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.85))
-                    .symbolEffect(.bounce, value: w.at)
-                if w.kind == .interrupted, let start = f.record.updatedAt,
-                   let end = store.progress(for: f)?.interruptedAt {
-                    Text(Clock.text(end.timeIntervalSince(start)))
+        let s = session
+        let p = store.progress(for: s)
+        let withdraw = store.recentWithdraw[s.id]
+        let snapshot = ClaudeStatus.snapshot(store.timeline(for: s)?.progress, settingsModel: store.settingsModel)
+        HStack(spacing: 5) {
+            DuoGlyph(snapshot: snapshot, center: StatusCenter.of(s, progress: p, withdrawn: withdraw != nil), size: size)
+                .symbolEffect(.bounce, value: withdraw?.at)
+            if let w = withdraw, w.kind == .interrupted, let start = s.record.updatedAt, let end = p?.interruptedAt {
+                // 打断：计时停在撤回那一刻并划掉。
+                Text(Clock.text(end.timeIntervalSince(start)))
+                    .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Color.white.opacity(0.45))
+                    .strikethrough(true, color: Color.white.opacity(0.5))
+            } else if let c = p?.pendingChoice {
+                // 等你选：计时从提问那一刻算——这是它等了你多久。
+                LiveClock(since: c.at ?? s.record.updatedAt ?? .now, opacity: 0.8)
+            } else if s.declaration == .inProgress, let start = s.record.updatedAt {
+                LiveClock(since: start)
+            } else if s.declaration != .unreadable, let end = s.record.turnEndedAt ?? s.record.updatedAt {
+                // 结束了的一轮：结束了多久。旧记录没有 turnEndedAt，退回 updatedAt（提取时与结束时刻同时写下）。
+                TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                    Text(Clock.ago(end, now: ctx.date))
                         .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(Color.white.opacity(0.45))
-                        .strikethrough(true, color: Color.white.opacity(0.5))
-                }
-            }
-            .transition(.scale(scale: 0.6).combined(with: .opacity))
-        } else if let c = store.progress(for: f)?.pendingChoice {
-            // 等你选择：换成会动的问号，计时从提问那一刻算——这是它等了你多久。
-            HStack(spacing: 5) {
-                Image(systemName: c.kind == .plan ? "checklist" : "questionmark.bubble.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(ChoiceCard.accent)
-                    .symbolEffect(.pulse, options: .repeating)
-                if let at = c.at ?? f.record.updatedAt { LiveClock(since: at, opacity: 0.8) }
-            }
-            .transition(.scale(scale: 0.6).combined(with: .opacity))
-        } else if f.declaration == .inProgress {
-            HStack(spacing: 5) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .symbolEffect(.pulse, options: .repeating)
-                if let start = f.record.updatedAt { LiveClock(since: start) }
-            }
-        } else if f.declaration == .unreadable {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color.red)
-        } else {
-            // 结束了的一轮：点 + 结束了多久。
-            HStack(spacing: 5) {
-                Circle().fill(tint(f)).frame(width: 7, height: 7)
-                // 旧记录没有 turnEndedAt；提取时 updatedAt 与结束时刻同时写下，退回它。
-                if let end = f.record.turnEndedAt ?? f.record.updatedAt {
-                    TimelineView(.periodic(from: .now, by: 30)) { ctx in
-                        Text(Clock.ago(end, now: ctx.date))
-                            .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(Color.white.opacity(0.5))
-                    }
+                        .foregroundStyle(Color.white.opacity(seen.isUnread(s) ? 0.7 : 0.45))
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
         }
-    }
-
-    private func tint(_ s: SessionState) -> Color {
-        guard seen.isUnread(s) else { return Color.white.opacity(0.35) }
-        if s.declaration == .undeclared { return .orange }
-        return s.flaggedByModel ? .orange : .white
+        .animation(.snappy(duration: 0.3), value: StatusCenter.of(s, progress: p, withdrawn: withdraw != nil))
     }
 }
 
@@ -357,7 +331,7 @@ struct SessionPill: View {
 
 /// 展开态的内容，单独成一个视图：控制器要先量出它的真实高度再定形状大小。
 ///
-/// Apple 的排法：刘海两侧的耳朵放收起态的同一组信息，右耳加 Claude Code 状态图标；
+/// Apple 的排法：刘海两侧的耳朵放收起态的同一组信息（左耳是合一状态图标与计时）；
 /// 下面三块依次是「你的要求 / Claude 的理解 / Claude 在做」，每块左边标题、右边一个可以核对的数；
 /// 进度是一根分段胶囊；底部一条数据条。所有正文左缘在同一条对齐线上（x = 16）。
 /// 称谓按用户要求改过：先前的「你批准的 / 我读成了」里的「我」指模型，放在一个第三方看板上读着别扭。
@@ -401,18 +375,18 @@ struct IslandExpandedContent: View {
         .onAppear { DispatchQueue.main.async { shown = true } }
     }
 
-    // 刘海两侧：左耳 = 工作区 … 状态（贴摄像头），右耳 = 标签（贴摄像头）… Claude Code 状态图标。
+    // 刘海两侧：左耳 = 工作区 … 合一状态图标与计时（贴摄像头，与折叠态左翼同一相对位置），右耳 = 标签（贴摄像头）… 阶段。
     private func ears(_ s: SessionState?) -> some View {
-        let status = s.flatMap { ClaudeStatus.snapshot(store.timeline(for: $0)?.progress, settingsModel: store.settingsModel) }
-        return HStack(spacing: 0) {
+        HStack(spacing: 0) {
             HStack(spacing: 6) {
                 if let s {
+                    DemoMark()
                     Text(s.workspace)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Ink.tertiary)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
-                    StatusGlyph(store: store, seen: seen, session: s)
+                    WingStatus(store: store, seen: seen, session: s, size: 20)
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -424,19 +398,16 @@ struct IslandExpandedContent: View {
 
             HStack(spacing: 6) {
                 if let s {
-                    Text(earTag(s))
+                    let tag = Self.earTag(s, store: store, seen: seen)
+                    Text(tag.text)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(s.flaggedByModel ? Color.orange : Ink.primary)
+                        .foregroundStyle(s.flaggedByModel ? Color.orange : (tag.carried ? Ink.tertiary : Ink.primary))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    if let status {
-                        ClaudeStatusGlyph(snapshot: status, size: 19)
-                    } else {
-                        Text(phaseWord(s))
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Ink.tertiary)
-                            .lineLimit(1)
-                    }
+                    Text(Self.phaseWord(s, store: store))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Ink.tertiary)
+                        .lineLimit(1)
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -447,14 +418,20 @@ struct IslandExpandedContent: View {
         .frame(height: notchHeight)
     }
 
-    private func earTag(_ s: SessionState) -> String {
-        if let p = store.progress(for: s), p.pendingChoice != nil {
-            return p.tag ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
+    /// 标签位只放「这一轮在做什么」。「思考中 / 回答中 / 等你选择」这类状态词在右边的阶段位上。
+    /// 先前没有标签时退回 FocusRule.label（它在进行中返回的正是状态词），于是「思考中」写了两遍（用户 2026-09-13 悬停时看到）。
+    /// 进行中还没写出标签：用上一轮的标签并调暗，标明是沿用的。
+    static func earTag(_ s: SessionState, store: WillowStore, seen: SeenStore) -> (text: String, carried: Bool) {
+        let p = store.progress(for: s)
+        if let t = p?.tag ?? s.tag { return (t, false) }
+        if s.declaration == .inProgress || s.declaration == .interrupted || p?.pendingChoice != nil {
+            return (FocusRule.lastLoggedTag(s, store) ?? "还没有标签", true)
         }
-        return FocusRule.label(s, seen, store)?.text ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
+        if let l = FocusRule.label(s, seen, store), l.text != phaseWord(s, store: store) { return (l.text, l.carried) }
+        return (FocusRule.lastLoggedTag(s, store) ?? "还没有标签", true)
     }
 
-    private func phaseWord(_ s: SessionState) -> String {
+    static func phaseWord(_ s: SessionState, store: WillowStore) -> String {
         if store.recentWithdraw[s.id] != nil { return "撤回" }
         switch s.declaration {
         case .unreadable: return "插件读不到"
@@ -583,7 +560,7 @@ struct IslandExpandedContent: View {
         return HStack(spacing: 0) {
             StatCell(label: status.map { "上下文 · \(ClaudeStatus.compact($0.window)) 窗口" } ?? "上下文",
                      value: status.map { "\(ClaudeStatus.compact($0.contextUsed)) · \(Self.percent($0.usedFraction))" } ?? "—",
-                     tint: status.map { ClaudeStatusGlyph.ringColor($0.remaining) } ?? Ink.tertiary)
+                     tint: status.map { DuoGlyph.ringColor($0.remaining) } ?? Ink.tertiary)
             StatDivider()
             StatCell(label: "缓存命中", value: status.map { Self.percent($0.cacheHit) } ?? "—")
             StatDivider()
@@ -714,6 +691,8 @@ struct LiveClock: View {
                 .foregroundStyle(Color.white.opacity(opacity))
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.3), value: t)
+                .lineLimit(1)
+                .fixedSize()
         }
     }
 }

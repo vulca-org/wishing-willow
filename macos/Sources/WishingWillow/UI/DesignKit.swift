@@ -124,50 +124,112 @@ extension View {
     }
 }
 
-/// Claude Code 状态的合一图标，照 iPhone Duo 角落里那个圆：外圈连续弧、中心扇形、底部四个点，
-/// 三种形状不抢同一个视觉通道，所以挤在一个小圆里也分得开。
-/// - 外圈弧：上下文还剩多少（像电量；剩 20% 变橙、10% 变红）；
-/// - 中心扇形：最近一次写入距今多久（像 Wi-Fi，写得越近格数越多）；
-/// - 底部四点：最近一次请求的缓存命中（像信号格）。
-/// 小地方（刘海旁）用它；点击面板里拆回三个独立指标——iPhone Duo 在展开的大屏上也拆回三个图标。
-struct ClaudeStatusGlyph: View {
-    let snapshot: ClaudeStatus.Snapshot
+/// 圆心放什么。iPhone Duo 原版的圆心固定是 Wi-Fi 扇形；用户 2026-09-13 选的方案是圆心随状态换符号，
+/// 这样左翼只要一个圆加计时，就能说清「在跑 / 等你 / 结束 / 出事」。
+enum StatusCenter: Equatable {
+    case live        // 在跑：Wi-Fi 扇形，写得越近越满
+    case waiting     // Claude 在等你选择或批准
+    case done        // 结束，写了理解
+    case flagged     // 结束但问了没写，或 Claude 自标不一致
+    case broken      // 插件读不到输入
+    case withdrawn   // 你撤回了这一轮
+    case idle        // 这一轮没问 / 还没开始
+
+    static func of(_ s: SessionState, progress: TurnProgress?, withdrawn: Bool) -> StatusCenter {
+        if s.declaration == .unreadable { return .broken }
+        if withdrawn || s.declaration == .interrupted { return .withdrawn }
+        if progress?.pendingChoice != nil { return .waiting }
+        switch s.declaration {
+        case .inProgress: return .live
+        case .declared: return s.flaggedByModel ? .flagged : .done
+        case .undeclared: return .flagged
+        case .notAsked, .awaiting: return .idle
+        case .unreadable, .interrupted: return .broken
+        }
+    }
+}
+
+/// iPhone Duo 合一状态图标的几何。量自 dev.to「One icon, three signals」封面动图第 22–28 帧（640×360，放大 3 倍逐帧看）：
+/// 外圈是一段约 230° 的粗弧，缺口居中在正下方；四个圆点排在缺口里，和弧落在同一个圆上，相邻约隔 20°；
+/// 弧宽约为外径的 5.3%、点径约 7.9%（相邻两点之间的空隙约等于一个点径）；Wi-Fi 扇形居中，宽约为外径的 44%。
+/// 先前那版画成整圈加圈内四点；第二版比例又画粗了约 1.7 倍，20pt 下四个点挤成一团（2026-09-13 放大截图）。
+enum DuoGeometry {
+    static let arcSpan: Double = 230
+    /// 相对正下方的角度（度），从左到右。
+    static let dotAngles: [Double] = [30, 10, -10, -30]
+    static let lineRatio: CGFloat = 0.058
+    static let dotSizeRatio: CGFloat = 0.082
+    static let symbolRatio: CGFloat = 0.42
+    /// 弧从左下端起、顺时针经过顶部到右下端。SwiftUI 的 trim 从 3 点钟方向起算，正下方是 90°。
+    static var arcStartDegrees: Double { 90 + (360 - arcSpan) / 2 }
+}
+
+/// 折叠态左翼的合一状态图标，照 iPhone Duo 角落里那个圆画：外圈弧、底部四点、圆心符号，三种形状各走一个视觉通道。
+/// - 外圈弧：上下文还剩多少（像电量；剩 20% 变橙、10% 变红）。没有 token 数据时只画暗轨道，不假装知道；
+/// - 底部四点：最近一次请求的缓存命中（像信号格）；
+/// - 圆心：状态符号（StatusCenter）；在跑时是 Wi-Fi 扇形，最近一次写入越近越满。换符号时用 SF Symbols 的替换动效。
+struct DuoGlyph: View {
+    var snapshot: ClaudeStatus.Snapshot?
+    let center: StatusCenter
     var size: CGFloat = 18
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            let since = snapshot.lastWrite.map { ctx.date.timeIntervalSince($0) } ?? .infinity
+            let since = snapshot?.lastWrite.map { ctx.date.timeIntervalSince($0) } ?? .infinity
             glyph(live: ClaudeStatus.liveness(secondsSinceLastWrite: since))
         }
-        .help(Self.summary(snapshot))
+        .frame(width: size, height: size)
+        .help(summary)
         .accessibilityElement()
-        .accessibilityLabel(Self.summary(snapshot))
+        .accessibilityLabel(summary)
     }
 
     private func glyph(live: Double) -> some View {
-        let lw = max(1.5, size * 0.09)
-        let lit = ClaudeStatus.dots(cacheHit: snapshot.cacheHit)
+        let lw = max(1.1, size * DuoGeometry.lineRatio)
+        let dot = max(1.6, size * DuoGeometry.dotSizeRatio)
+        let r = size / 2 - dot / 2
+        let span = DuoGeometry.arcSpan / 360
+        let lit = snapshot.map { ClaudeStatus.dots(cacheHit: $0.cacheHit) } ?? 0
+        let symbol = Self.symbol(center, live: live)
         return ZStack {
-            Circle().stroke(Ink.quaternary, lineWidth: lw)
             Circle()
-                .trim(from: 0, to: max(0.02, snapshot.remaining))
-                .stroke(Self.ringColor(snapshot.remaining), style: StrokeStyle(lineWidth: lw, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Image(systemName: "wifi", variableValue: live)
-                .font(.system(size: size * 0.36, weight: .bold))
-                .foregroundStyle(Ink.primary)
-                .offset(y: -size * 0.05)
-            HStack(spacing: size * 0.05) {
-                ForEach(0..<4, id: \.self) { i in
-                    Circle()
-                        .fill(i < lit ? Ink.primary : Ink.quaternary)
-                        .frame(width: size * 0.085, height: size * 0.085)
-                }
+                .trim(from: 0, to: span)
+                .stroke(Ink.quaternary, style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                .rotationEffect(.degrees(DuoGeometry.arcStartDegrees))
+                .frame(width: 2 * r, height: 2 * r)
+            if let remaining = snapshot?.remaining {
+                Circle()
+                    .trim(from: 0, to: span * max(0.03, remaining))
+                    .stroke(Self.ringColor(remaining), style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                    .rotationEffect(.degrees(DuoGeometry.arcStartDegrees))
+                    .frame(width: 2 * r, height: 2 * r)
             }
-            .offset(y: size * 0.23)
+            ForEach(Array(DuoGeometry.dotAngles.enumerated()), id: \.offset) { i, a in
+                let theta = (90 + a) * .pi / 180
+                Circle()
+                    .fill(i < lit ? Ink.primary : Ink.quaternary)
+                    .frame(width: dot, height: dot)
+                    .offset(x: r * CGFloat(cos(theta)), y: r * CGFloat(sin(theta)))
+            }
+            Image(systemName: symbol.name, variableValue: symbol.variable)
+                .font(.system(size: size * DuoGeometry.symbolRatio, weight: .bold))
+                .foregroundStyle(symbol.tint)
+                .contentTransition(.symbolEffect(.replace))
+                .offset(y: -size * 0.03)
         }
-        .padding(lw / 2)
         .frame(width: size, height: size)
+    }
+
+    static func symbol(_ c: StatusCenter, live: Double) -> (name: String, variable: Double?, tint: Color) {
+        switch c {
+        case .live: ("wifi", live, Ink.primary)
+        case .waiting: ("questionmark", nil, ChoiceCard.accent)
+        case .done: ("checkmark", nil, Ink.primary)
+        case .flagged: ("exclamationmark", nil, .orange)
+        case .broken: ("exclamationmark", nil, .red)
+        case .withdrawn: ("arrow.uturn.backward", nil, Ink.secondary)
+        case .idle: ("minus", nil, Ink.tertiary)
+        }
     }
 
     static func ringColor(_ remaining: Double) -> Color {
@@ -178,9 +240,30 @@ struct ClaudeStatusGlyph: View {
         }
     }
 
-    static func summary(_ s: ClaudeStatus.Snapshot) -> String {
-        "上下文剩 \(Int((s.remaining * 100).rounded()))%（已用 \(ClaudeStatus.compact(s.contextUsed)) / \(ClaudeStatus.compact(s.window))）"
+    private var summary: String {
+        guard let s = snapshot else { return "还没有这一轮的 token 数据" }
+        return "上下文剩 \(Int((s.remaining * 100).rounded()))%（已用 \(ClaudeStatus.compact(s.contextUsed)) / \(ClaudeStatus.compact(s.window))）"
             + " · 缓存命中 \(Int((s.cacheHit * 100).rounded()))% · 本轮输出 \(ClaudeStatus.compact(s.outputTokens))"
+    }
+}
+
+/// 演示模式（--present）的标记。演示画的是造出来的会话与题目，直接画在真屏幕上会被当成真的——
+/// 2026-09-13 用户在灵动岛上看到演示里的选择题，去 Claude Code 里找不到对应的问题。
+struct DemoMark: View {
+    /// 折叠态两翼宽度有限，只放一个黄点；展开态和面板里写字。
+    var compact = false
+
+    var body: some View {
+        if PresentDemo.seconds != nil, compact {
+            Circle().fill(Color.yellow).frame(width: 6, height: 6).help("演示数据")
+        } else if PresentDemo.seconds != nil {
+            Text("演示")
+                .font(.system(size: 9, weight: .bold))
+                .padding(.horizontal, 5).padding(.vertical, 1.5)
+                .background(Color.yellow, in: Capsule())
+                .foregroundStyle(Color.black)
+                .fixedSize()
+        }
     }
 }
 
@@ -193,7 +276,7 @@ struct ContextGauge: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Ink.quaternary)
                 Capsule()
-                    .fill(ClaudeStatusGlyph.ringColor(1 - used))
+                    .fill(DuoGlyph.ringColor(1 - used))
                     .frame(width: max(3, g.size.width * used))
             }
         }
