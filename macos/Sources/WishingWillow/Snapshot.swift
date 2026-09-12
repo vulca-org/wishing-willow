@@ -94,6 +94,12 @@ enum Snapshot {
         return 0
     }
 
+    /// 给 --selfshot 用的一批：一个两栏不一致的、一个未声明的、一个陈旧的。
+    static var selfShotFixtures: [(String, String)] {
+        guard let first = scenes.first(where: { $0.name == "01-declared-but-drifting" }) else { return [] }
+        return first.files
+    }
+
     // MARK: - 样例
 
     private static var now: String {

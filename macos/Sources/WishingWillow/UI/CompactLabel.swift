@@ -10,19 +10,10 @@ struct CompactLabel: View {
     let store: WillowStore
     let seen: SeenStore
 
-    private var live: [SessionState] { store.sessions.filter { !$0.isStale } }
 
-    /// 要显示的那一个。按事实排序，没有一条按内容挑：
-    /// 插件坏了最优先，然后是「没看过且模型标了 ⚠」，然后是「没看过」，
-    /// 否则最近更新的那个。
-    private var focus: SessionState? {
-        live.first { $0.declaration == .unreadable }
-            ?? live.first { seen.isUnread($0) && $0.flaggedByModel }
-            ?? live.first { seen.isUnread($0) }
-            ?? live.first
-    }
+    private var focus: SessionState? { FocusRule.focus(store, seen) }
 
-    private var others: Int { max(0, live.count - 1) }
+    private var others: Int { FocusRule.others(store) }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -49,14 +40,7 @@ struct CompactLabel: View {
         .fixedSize()
     }
 
-    /// 只在有话说的时候占宽度。**「已读」压过 ⚠**：警报的任务是让你去看，
-    /// 你看过了它就该闭嘴 —— 一直亮着的警报会被学会忽略，而被忽略的警报
-    /// 等于没有。插件坏了是例外，那不是对某一轮的判断，是工具本身不工作。
-    private func label(for s: SessionState) -> String? {
-        if s.declaration == .unreadable { return "读不到输入" }
-        guard seen.isUnread(s) else { return nil }
-        return s.tag ?? s.workspace
-    }
+    private func label(for s: SessionState) -> String? { FocusRule.label(s, seen) }
 
     private func tint(_ s: SessionState) -> Color {
         if s.declaration == .unreadable { return .red }

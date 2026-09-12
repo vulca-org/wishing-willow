@@ -110,6 +110,26 @@ final class StatusItemController: NSResponder {
         if popover.isShown { popover.performClose(nil) }
     }
 
+    // MARK: - 自拍入口（--selfshot）
+
+    /// 把常亮层和弹出面板摆到可拍的状态。只给 SelfShot 用。
+    func presentForCapture() {
+        store.reload()
+        expand(markSeen: false)
+    }
+
+    func dismissAfterCapture() {
+        collapse()
+    }
+
+    /// 要拍的视图。拍的是真实视图层级，所以玻璃与材质都是系统实际渲染的那一份。
+    func captureTargets() -> [(String, NSView)] {
+        var out: [(String, NSView)] = []
+        if let b = item.button { out.append(("strip", b)) }
+        if let v = popover.contentViewController?.view { out.append(("panel", v)) }
+        return out
+    }
+
     @objc private func clicked() {
         collapse()
         if let w = detail, w.isVisible {
