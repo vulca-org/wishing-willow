@@ -31,7 +31,7 @@ struct IslandView: View {
             )
             .fill(Color.black)
 
-            if state.expanded { expanded } else { compact }
+            if state.expanded { IslandExpandedContent(store: store, seen: seen) } else { compact }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
@@ -58,7 +58,8 @@ struct IslandView: View {
                     Circle().fill(tint(f)).frame(width: 7, height: 7)
                 }
             }
-            .padding(.trailing, 10)
+            .padding(.trailing, 8)
+            .padding(.leading, 10)
             .frame(maxWidth: .infinity)
 
             Color.clear.frame(width: notchWidth)          // 摄像头那一块，画了也看不见
@@ -75,20 +76,41 @@ struct IslandView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 10)
+            .padding(.leading, 8)
+            // 6 个汉字在 11pt 约 67pt。翼宽 92 − 8 − 10 = 74，放得下也不贴圆角。
+            // 上一版为了不贴圆角加了内边距，却把可用宽压到 62，标签被截成「审幻灯片…」——真实截图抓到的。
+            .padding(.trailing, 10)
             .frame(maxWidth: .infinity)
         }
         .frame(height: 28)
     }
 
-    // MARK: 展开
+    private func tint(_ s: SessionState) -> Color {
+        if s.declaration == .unreadable { return .red }
+        guard seen.isUnread(s) else { return Color.white.opacity(0.35) }
+        return s.flaggedByModel ? .orange : .white
+    }
+}
 
-    private var expanded: some View {
+/// 展开态的内容，单独成一个视图：控制器要先量出它的真实高度再定面板大小。
+/// 先前高度写死 156pt，内容一短底部就空出一大块黑——「不要空白内容」。
+struct IslandExpandedContent: View {
+    let store: WillowStore
+    let seen: SeenStore
+
+    private var focus: SessionState? { FocusRule.focus(store, seen) }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Color.clear.frame(height: 24)                 // 刘海那一条
 
             if let s = focus {
-                row("你批准的", s.prompt ?? "—", Color.white)
+                if s.record.isSystemMessage {
+                    // 不是人说的话，不能挂在「你批准的」下面。
+                    row("这一轮", "系统消息（\(PromptSource.describe(s.prompt))），不是你说的", Color.white.opacity(0.55))
+                } else {
+                    row("你批准的", s.prompt ?? "—", Color.white)
+                }
                 decodeRow(s)
                 HStack(spacing: 6) {
                     Text(s.workspace)
@@ -141,9 +163,4 @@ struct IslandView: View {
         }
     }
 
-    private func tint(_ s: SessionState) -> Color {
-        if s.declaration == .unreadable { return .red }
-        guard seen.isUnread(s) else { return Color.white.opacity(0.35) }
-        return s.flaggedByModel ? .orange : .white
-    }
 }

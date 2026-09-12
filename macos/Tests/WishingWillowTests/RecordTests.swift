@@ -67,6 +67,19 @@ struct RecordTests {
         #expect(SessionState(record: legacy, now: .now).declaration == .undeclared)
     }
 
+    @Test("origin=system → 系统消息，不当成你批准的；字段说了算；旧记录只按两种信封头兜底")
+    func systemOrigin() throws {
+        let sys = try decode(#"{"schema":6,"sessionId":"a","prompt":"<task-notification>\n<task-id>x</task-id>","promptField":"prompt","origin":"system","reminded":false}"#)
+        #expect(sys.isSystemMessage)
+        #expect(PromptSource.describe(sys.prompt) == "后台任务通知")
+
+        let user = try decode(#"{"schema":6,"sessionId":"b","prompt":"<task-notification> 这句是用户自己贴进来的","promptField":"prompt","origin":"user","reminded":true}"#)
+        #expect(user.isSystemMessage == false)
+
+        let legacy = try decode(#"{"schema":5,"sessionId":"c","prompt":"<task-notification>\n<task-id>y</task-id>","promptField":"prompt","reminded":false}"#)
+        #expect(legacy.isSystemMessage)
+    }
+
     @Test("空白的 decode 等于没有 decode")
     func blankDecode() throws {
         let r = try decode(#"{"schema":2,"sessionId":"a","prompt":"x 这是一句够长的请求","promptField":"prompt","decode":"   "}"#)

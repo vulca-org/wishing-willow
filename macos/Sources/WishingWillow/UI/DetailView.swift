@@ -111,10 +111,16 @@ struct DetailView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            Text(t.prompt ?? "—")
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            if t.isSystemMessage {
+                Text("系统消息（\(PromptSource.describe(t.prompt))），不是你说的")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text(t.prompt ?? "—")
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             // 「没问」和「问了没答」必须分开写。合成一句「无声明」，
             // 这个窗口就在制造它本该打破的那种沉默。

@@ -16,10 +16,12 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
     /// and "we asked and got nothing" are the same row — and every statistic
     /// built on that confusion is wrong.
     var reminded: Bool?
+    var origin: String?
     var prompt: String?
     var decode: String?
     var tag: String?
 
+    var isSystemMessage: Bool { PromptSource.isSystem(origin: origin, prompt: prompt) }
     var declared: Bool { decode?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
     var flaggedByModel: Bool { decode?.hasPrefix("⚠") == true }
 
@@ -32,12 +34,13 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
 }
 
 extension TurnLogEntry: Decodable {
-    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, promptField, prompt, decode, tag }
+    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, promptField, origin, prompt, decode, tag }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
         turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
         reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)

@@ -41,8 +41,8 @@ final class IslandController {
 
     private(set) var yielding = false
 
-    static let wing: CGFloat = 76
-    static let expandedSize = CGSize(width: 480, height: 156)
+    static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 67pt 算
+    static let expandedWidth: CGFloat = 480
 
     init(store: WillowStore) { self.store = store }
 
@@ -90,7 +90,7 @@ final class IslandController {
         guard let s = screen() else { return }
         let g = notchGeometry()
         let size = state.expanded
-            ? Self.expandedSize
+            ? CGSize(width: Self.expandedWidth, height: expandedHeight())
             : CGSize(width: g.width + Self.wing * 2, height: g.height)
         // 让路：挂到刘海下方 6pt，不和别的刘海 app 抢同一块矩形。
         let drop: CGFloat = yielding ? g.height + 6 : 0
@@ -100,37 +100,58 @@ final class IslandController {
         panel.setFrame(rect, display: true, animate: animated)
     }
 
+    /// 按内容量出展开高度，上下限兜住极端情况。
+    private func expandedHeight() -> CGFloat {
+        let probe = NSHostingController(rootView:
+            IslandExpandedContent(store: store, seen: seen).frame(width: Self.expandedWidth))
+        let fit = probe.sizeThatFits(in: CGSize(width: Self.expandedWidth, height: 10_000))
+        return max(56, min(260, ceil(fit.height)))   // 下限 96 时一行内容会被撑出一块黑
+    }
+
     // MARK: 交互
 
+    /// 演示模式的日志。只在 --present 下写 stderr。
+    private func demoLog(_ msg: String) {
+        guard PresentDemo.seconds != nil else { return }
+        FileHandle.standardError.write(Data("\(Date()) \(msg)\n".utf8))
+    }
+
     private func hover(_ inside: Bool) {
+        // 演示要可复现：你的鼠标恰好经过展开后的面板，悬停收回就会让「展开态」截图拍成收起态。
+        // 忽略，但记下来——被忽略的事件本身就是证据。
+        if PresentDemo.seconds != nil { demoLog("ignored hover inside=\(inside)"); return }
         if inside {
             autoCollapse?.invalidate()
             if let f = FocusRule.focus(store, seen) { seen.markSeen(f) }
-            setExpanded(true)
+            setExpanded(true, reason: "hover-in")
         } else {
             // 展开时面板在鼠标下面变大，会误报一次「离开」。等一拍再看鼠标还在不在里面。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self else { return }
-                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.setExpanded(false) }
+                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.setExpanded(false, reason: "hover-out") }
             }
         }
     }
 
     /// 一轮刚开始：静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
     private func flash() {
-        setExpanded(true)
+        if PresentDemo.seconds != nil { demoLog("ignored turn-started"); return }
+        setExpanded(true, reason: "turn-started")
         autoCollapse?.invalidate()
         autoCollapse = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.setExpanded(false) }
+                if !self.panel.frame.contains(NSEvent.mouseLocation) { self.setExpanded(false, reason: "flash-timeout") }
             }
         }
     }
 
-    private func setExpanded(_ on: Bool) {
+    private func setExpanded(_ on: Bool, reason: String) {
         guard state.expanded != on else { return }
         state.expanded = on
+        // 演示模式下把每次展开/收回的原因打到 stderr —— 真实截图里「该展开的时候是收起的」，
+        // 不记原因就只能猜是谁收的。
+        demoLog("expanded=\(on) reason=\(reason)")
         layout(animated: true)
     }
 
@@ -158,7 +179,11 @@ final class IslandController {
 
     func presentExpanded() {
         store.reload()
-        setExpanded(true)
+        // 取消任何待执行的自动收回：否则演示期间恰好有一轮开始，那 6 秒的闪现计时器
+        // 会在演示展开之后把它收回去 —— 真实截图里「展开态」拍到的是收起态，就是这么来的（待日志证实）。
+        autoCollapse?.invalidate()
+        autoCollapse = nil
+        setExpanded(true, reason: "present")
     }
 
     /// 已知刘海类 app 在跑没有。按名字与 bundle id 的启发式：宁可误判成「有」而让路，

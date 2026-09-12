@@ -14,7 +14,11 @@ struct TurnView: View {
         VStack(alignment: .leading, spacing: 10) {
             if state.isStale { staleNote }
 
-            row(label: "你批准的", text: state.prompt, tone: .primary)
+            if state.record.isSystemMessage {
+                row(label: "这一轮", text: "系统消息（\(PromptSource.describe(state.prompt))），不是你说的", tone: .secondary)
+            } else {
+                row(label: "你批准的", text: state.prompt, tone: .primary)
+            }
 
             switch state.declaration {
             case .declared(let d):

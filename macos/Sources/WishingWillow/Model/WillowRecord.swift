@@ -30,6 +30,8 @@ struct WillowRecord: Sendable, Equatable {
     var promptOrigin: PromptOrigin
     /// 这一轮插件到底有没有注入提醒。缺了它，「没问」和「问了没答」是同一行。
     var reminded: Bool?
+    /// 原话的来历：`user` / `system`。插件写下的事实，读方照它显示。
+    var origin: String?
     var decode: String?
     /// 模型自己压出来的 ≤6 字标签。刘海常亮层唯一放得下的东西。
     var tag: String?
@@ -38,7 +40,7 @@ struct WillowRecord: Sendable, Equatable {
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, decode, tag, endedAt
+        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, endedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -51,6 +53,7 @@ extension WillowRecord: Decodable {
         turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
 
@@ -84,4 +87,27 @@ extension WillowRecord: Decodable {
             .dateTimeSeparator(.standard).time(includingFractionalSeconds: true)) { return d }
         return try? Date(s, strategy: .iso8601)
     }
+}
+
+/// 原话是不是系统塞进来的。
+///
+/// 新记录：插件写下的 `origin` 说了算，**不按内容猜**——用户自己贴一段
+/// `<task-notification>` 进来，那仍然是用户说的话。
+/// 旧记录（没有 `origin` 这一位）：只认两种最常见的信封头兜底。完整规则只在插件里有一份，
+/// 读方不维护第二份——这个兜底随旧记录消失而失效，是有意的。
+enum PromptSource {
+    static func isSystem(origin: String?, prompt: String?) -> Bool {
+        if let origin { return origin == "system" }
+        guard let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return p.hasPrefix("<task-notification") || p.hasPrefix("[SYSTEM NOTIFICATION")
+    }
+
+    static func describe(_ prompt: String?) -> String {
+        let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return p.hasPrefix("<task-notification") ? "后台任务通知" : "系统消息"
+    }
+}
+
+extension WillowRecord {
+    var isSystemMessage: Bool { PromptSource.isSystem(origin: origin, prompt: prompt) }
 }
