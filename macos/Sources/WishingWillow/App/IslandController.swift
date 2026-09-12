@@ -42,9 +42,6 @@ final class IslandController {
     private(set) var yielding = false
 
     static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 67pt 算
-    /// 没有活动会话时的翼宽。先前空闲也占 340pt、什么都不画——一条空黑条，
-    /// 空白内容，而且和「坏了」长得一样。真实截图里看出来的。
-    static let idleWing: CGFloat = 22
     static let expandedWidth: CGFloat = 480
 
     init(store: WillowStore) { self.store = store }
@@ -60,7 +57,7 @@ final class IslandController {
         ))
         panel.contentView = host
 
-        store.onTurnStarted = { [weak self] _ in self?.flash() }
+        store.onDeclarationArrived = { [weak self] _ in self?.flash() }
         store.onReload = { [weak self] in self?.layout(animated: true) }
         store.start()
         layout(animated: false)
@@ -93,10 +90,11 @@ final class IslandController {
     private func layout(animated: Bool) {
         guard let s = screen() else { return }
         let g = notchGeometry()
-        let idle = FocusRule.focus(store, seen) == nil
+        // 两翼只在有话说的时候长出来；看过了、空闲、没问——缩回刘海，不遮任何东西。
+        let wings = FocusRule.focus(store, seen).flatMap { FocusRule.label($0, seen, store) } != nil
         let size = state.expanded
             ? CGSize(width: Self.expandedWidth, height: expandedHeight())
-            : CGSize(width: g.width + (idle ? Self.idleWing : Self.wing) * 2, height: g.height)
+            : CGSize(width: g.width + (wings ? Self.wing * 2 : 0), height: g.height)
         // 让路：挂到刘海下方 6pt，不和别的刘海 app 抢同一块矩形。
         let drop: CGFloat = yielding ? g.height + 6 : 0
         let rect = NSRect(x: g.midX - size.width / 2,
@@ -105,7 +103,16 @@ final class IslandController {
         // 每次扫描都会走到这里（约 5 秒一次），尺寸没变就别动，免得它一直在闪。
         if abs(panel.frame.width - rect.width) < 0.5, abs(panel.frame.height - rect.height) < 0.5,
            abs(panel.frame.minX - rect.minX) < 0.5, abs(panel.frame.minY - rect.minY) < 0.5 { return }
-        panel.setFrame(rect, display: true, animate: animated)
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.34
+                // 带一点过冲的缓动（控制点 y 超过 1），接近灵动岛的收放。
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 1.18, 0.32, 1.0)
+                panel.animator().setFrame(rect, display: true)
+            }
+        } else {
+            panel.setFrame(rect, display: true)
+        }
     }
 
     /// 按内容量出展开高度，上下限兜住极端情况。
@@ -127,7 +134,7 @@ final class IslandController {
     private func hover(_ inside: Bool) {
         // 演示要可复现：你的鼠标恰好经过展开后的面板，悬停收回就会让「展开态」截图拍成收起态。
         // 忽略，但记下来——被忽略的事件本身就是证据。
-        if PresentDemo.seconds != nil { demoLog("ignored hover inside=\(inside)"); return }
+        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored hover inside=\(inside)"); return }
         if inside {
             autoCollapse?.invalidate()
             if let f = FocusRule.focus(store, seen) { seen.markSeen(f) }
@@ -143,8 +150,8 @@ final class IslandController {
 
     /// 一轮刚开始：静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
     private func flash() {
-        if PresentDemo.seconds != nil { demoLog("ignored turn-started"); return }
-        setExpanded(true, reason: "turn-started")
+        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored declaration-arrived"); return }
+        setExpanded(true, reason: "declaration-arrived")
         autoCollapse?.invalidate()
         autoCollapse = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
             Task { @MainActor in
@@ -184,6 +191,9 @@ final class IslandController {
     }
 
     // MARK: 给 --present 用
+
+    /// 演示用：直接打开点击后的面板。
+    func presentDetail() { openDetail() }
 
     func presentExpanded() {
         store.reload()

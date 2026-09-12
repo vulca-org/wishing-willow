@@ -29,16 +29,18 @@ struct IslandView: View {
                 bottomLeadingRadius: state.expanded ? 20 : 10,
                 bottomTrailingRadius: state.expanded ? 20 : 10
             )
-            .fill(Color.black)
+            // 两翼缩回刘海时整块不画：物理刘海本身是黑的，再画一层只会在圆角处漏出一两个像素。
+            .fill(Color.black.opacity(state.expanded || wingLabel != nil ? 1 : 0))
 
             if state.expanded {
                 IslandExpandedContent(store: store, seen: seen)
-            } else if focus == nil {
-                idle
-            } else {
-                compact
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+            } else if let f = focus, let l = wingLabel {
+                compact(f, l)
+                    .transition(.opacity)
             }
         }
+        .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.expanded)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .onHover(perform: onHover)
@@ -46,67 +48,51 @@ struct IslandView: View {
         .environment(\.colorScheme, .dark)
     }
 
-    // MARK: 空闲
-
-    /// 没有活动会话：两翼收窄，左翼一个暗点表示「在跑、空闲」。
-    /// 不画东西也不占宽度；但不能完全消失——完全消失和「app 没在跑」分不开。
-    private var idle: some View {
-        HStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                Circle().fill(Color.white.opacity(0.3)).frame(width: 5, height: 5)
-            }
-            .padding(.trailing, 7)
-            .frame(maxWidth: .infinity)
-            Color.clear.frame(width: notchWidth)
-            Color.clear.frame(maxWidth: .infinity)
-        }
-        .frame(height: 28)
-    }
+    private var wingLabel: FocusRule.Label? { focus.flatMap { FocusRule.label($0, seen, store) } }
 
     // MARK: 收起
 
-    private var compact: some View {
+    private func compact(_ f: SessionState, _ l: FocusRule.Label) -> some View {
         HStack(spacing: 0) {
-            // 左翼：其他会话数 + 圆点。先前左翼只有一个点，一大块黑是空的 ——
-            // 真实截图里看出来的，「不要空白内容」。
-            HStack(spacing: 6) {
-                Spacer(minLength: 0)
-                let n = FocusRule.others(store)
-                if n > 0 {
-                    Text("+\(n)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.45))
-                }
-                if let f = focus {
-                    Circle().fill(tint(f)).frame(width: 7, height: 7)
-                }
-            }
-            .padding(.trailing, 8)
-            .padding(.leading, 10)
-            .frame(maxWidth: .infinity)
+            // 左翼只放状态。先前放「+1」，用户看不懂是什么；会话数挪到展开态的页脚。
+            HStack { Spacer(minLength: 0); indicator(f) }
+                .padding(.trailing, 10)
+                .frame(maxWidth: .infinity)
 
             Color.clear.frame(width: notchWidth)          // 摄像头那一块，画了也看不见
 
-            // 右翼：≤6 字标签，刚好放得下。
+            // 右翼：标签。换内容时淡入淡出——「回答中」收敛成标签的那一下要看得出来。
             HStack(spacing: 0) {
-                if let f = focus, let l = FocusRule.label(f, seen, store) {
-                    Text(l.text)
-                        .font(.system(size: 11, weight: .medium))
-                        // 沿用上一轮的标签调暗：它说的是这个会话在做什么，不是这一轮读成了什么。
-                        .foregroundStyle(f.declaration == .unreadable ? Color.red
-                                         : Color.white.opacity(l.carried ? 0.55 : 1))
-                        .lineLimit(1)
-                }
+                Text(l.text)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(f.declaration == .unreadable ? Color.red
+                                     : Color.white.opacity(l.carried ? 0.55 : 1))
+                    .lineLimit(1)
+                    .id(l.text)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
             // 6 个汉字在 11pt 约 67pt。翼宽 92 − 8 − 10 = 74，放得下也不贴圆角。
-            // 上一版为了不贴圆角加了内边距，却把可用宽压到 62，标签被截成「审幻灯片…」——真实截图抓到的。
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity)
+            .clipped()
         }
         .frame(height: 28)
+        .animation(.easeOut(duration: 0.35), value: l.text)
+    }
+
+    /// 回答中是会动的省略号——运动表示「事情还在进行」；其余是一个点。
+    @ViewBuilder
+    private func indicator(_ f: SessionState) -> some View {
+        if f.declaration == .inProgress {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.75))
+                .symbolEffect(.pulse, options: .repeating)
+        } else {
+            Circle().fill(tint(f)).frame(width: 7, height: 7)
+        }
     }
 
     private func tint(_ s: SessionState) -> Color {
@@ -136,6 +122,8 @@ struct IslandExpandedContent: View {
                     row("你批准的", s.prompt ?? "—", Color.white)
                 }
                 decodeRow(s)
+                    .id(String(describing: s.declaration))
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 HStack(spacing: 6) {
                     Text(s.workspace)
                     let n = FocusRule.others(store)
@@ -185,8 +173,45 @@ struct IslandExpandedContent: View {
         case .notAsked:
             row("我读成了", "这一轮没问（太短或是系统消息）", Color.white.opacity(0.5))
         case .inProgress:
-            row("我读成了", "模型正在回答，声明写出来才看得到", Color.white.opacity(0.5))
+            // 加载态：会动的省略号 + 一条扫光占位。声明到达时整行被真正的解码替换，淡入。
+            VStack(alignment: .leading, spacing: 5) {
+                Text("我读成了")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.45))
+                HStack(spacing: 6) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text("模型正在回答，声明写出来会出现在这里")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                }
+                ShimmerBar().frame(width: 280, height: 7)
+            }
         }
     }
 
+}
+
+/// 加载占位条：一道光从左到右扫过。只在「回答中」出现——运动表示事情还在进行。
+struct ShimmerBar: View {
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let phase = CGFloat(t.truncatingRemainder(dividingBy: 1.4) / 1.4)
+            GeometryReader { geo in
+                let w = geo.size.width
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(alignment: .leading) {
+                        LinearGradient(colors: [.clear, Color.white.opacity(0.25), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: w * 0.35)
+                            .offset(x: -w * 0.35 + w * 1.35 * phase)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+    }
 }

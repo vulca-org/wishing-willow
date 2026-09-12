@@ -25,6 +25,11 @@ final class WillowStore {
     /// 每次扫描之后调用。灵动岛靠它在「有没有活动会话」变化时重新定宽。
     var onReload: (() -> Void)?
 
+    /// 同一轮里，上一次扫描还没有声明、这一次有了——声明刚到达。
+    /// 灵动岛在这一刻展开（用户选的方案）：一展开就有内容可读，而不是在按回车时空展开。
+    var onDeclarationArrived: ((SessionState) -> Void)?
+    private var lastDecoded: [String: (turn: String, decoded: Bool)] = [:]
+
     private var lastTurnIds: [String: String] = [:]
     private var watcher: DirectoryWatcher?
     private var poll: Timer?
@@ -107,6 +112,17 @@ final class WillowStore {
         // 首次扫描不算「刚开始」——那只是 app 启动时看到的既有状态。
         if primed, let s = started.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
             onTurnStarted?(s)
+        }
+
+        var arrived: [SessionState] = []
+        for s in found {
+            guard let turn = s.record.turnId else { continue }
+            let has = s.record.decode?.isEmpty == false
+            if let had = lastDecoded[s.id], had.turn == turn, !had.decoded, has, !s.isStale { arrived.append(s) }
+            lastDecoded[s.id] = (turn, has)
+        }
+        if primed, let s = arrived.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
+            onDeclarationArrived?(s)
         }
         primed = true
         onReload?()

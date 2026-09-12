@@ -22,6 +22,7 @@ enum Main {
             PresentDemo.seconds = i + 1 < args.count ? (Double(args[i + 1]) ?? 6) : 6
             // --real：用本机真实状态而不是样例。截图只留在本地，不进公开仓。
             PresentDemo.real = args.contains("--real")
+            PresentDemo.passive = args.contains("--passive")
         }
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -34,6 +35,8 @@ enum Main {
 enum PresentDemo {
     nonisolated(unsafe) static var seconds: Double? = nil
     nonisolated(unsafe) static var real = false
+    /// --passive：不强制展开、不屏蔽事件——验证「声明到达就展开」这类要按真实事件发生的行为。
+    nonisolated(unsafe) static var passive = false
 }
 
 @MainActor
@@ -50,8 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let hold = PresentDemo.seconds {
             // 前一半停在收起态，后一半展开 —— 两个状态各拍一张。
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
-                c.presentExpanded()
+            if !PresentDemo.passive {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
+                    if CommandLine.arguments.contains("--detail") { c.presentDetail() } else { c.presentExpanded() }
+                }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold) {
                 NSApp.terminate(nil)

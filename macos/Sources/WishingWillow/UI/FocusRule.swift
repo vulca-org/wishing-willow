@@ -31,12 +31,16 @@ enum FocusRule {
     /// 不能把上一轮的解码冒充成这一轮的，也不该退回一个被截断的工作区名。
     static func label(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Label? {
         if s.declaration == .unreadable { return Label(text: "读不到输入", carried: false) }
-        guard seen.isUnread(s) else { return nil }
+        // 回答中：声明还没有，就老实说在回答。先前退回工作区名，截断成「twitter-cont…」，没有信息。
+        if s.declaration == .inProgress { return Label(text: "回答中", carried: true) }
+        guard seen.isUnread(s) else { return nil }          // 看过了 → 两翼缩回刘海，不遮东西
+        if s.declaration == .undeclared { return Label(text: "没写声明", carried: false) }
         if let t = s.tag { return Label(text: t, carried: false) }
         if s.declaration == .notAsked, let t = lastLoggedTag(s, store) {
             return Label(text: t, carried: true)
         }
-        return Label(text: s.workspace, carried: false)
+        if case .declared = s.declaration { return Label(text: "有新声明", carried: false) }
+        return nil                                          // 绝不退回工作区名
     }
 
     static func lastLoggedTag(_ s: SessionState, _ store: WillowStore) -> String? {
