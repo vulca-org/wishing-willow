@@ -1,0 +1,10 @@
+{
+  "session_id": "test-sess-10",
+  "prompt_id": "00000000-0000-4000-8000-000000000010",
+  "transcript_path": "<CASE_DIR>/transcript.jsonl",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "## 成果在哪\n\n三处，逐条说。"
+}

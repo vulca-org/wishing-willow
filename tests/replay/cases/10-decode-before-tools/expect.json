@@ -1,0 +1,14 @@
+{
+  "note": "标本取自本插件看到的第一个真实轮次。声明写在本轮第一条消息里，之后是十几次工具往返，Stop 拿到的 last_assistant_message 是最后一条——里面没有声明。照 last_assistant_message 提取会把「模型声明了」记成「没声明」。必须读 transcript_path，从本轮的用户消息往后扫。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": "先把今天能做完的那件事做掉，再给这条线一个明确的处置，并把结论落成一份能留下的东西。",
+    "prompt_startswith": "好的 继续吧 然后这条线"
+  }
+}

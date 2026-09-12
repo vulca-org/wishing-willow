@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Stop — pull the model's decode line out of the reply it just finished.
+// Stop — pull the model's decode line out of the turn it just finished.
 //
 // If the line isn't there, we leave `decode` null and say nothing. A missing
 // declaration is not an error to be corrected here; it is the state the reader
 // is supposed to show you.
 
+import { openSync, readSync, closeSync, statSync } from 'node:fs';
 import {
   SCHEMA, readStdin, parseInput, readState, writeState, quietExit,
 } from './_willow.mjs';
@@ -13,23 +14,105 @@ import {
 // is usable outside Chinese sessions.
 const DECODE_LINE = /^\s*(?:我读成了|我理解为|How I read it|Read as)\s*[：:]\s*(.+?)\s*$/iu;
 
-const SCAN_LINES = 12;   // the declaration belongs at the top or not at all
+const SCAN_LINES = 12;   // the declaration belongs at the top of a message or not at all
 
-/** Find the decode line near the start of the reply. Returns null if absent. */
-function findDecode(message) {
+/** Find the decode line near the start of one message. Returns null if absent. */
+function scanMessage(message) {
   if (typeof message !== 'string' || !message) return null;
-  const lines = message.split(/\r?\n/);
   let seen = 0;
-  for (const line of lines) {
+  for (const line of message.split(/\r?\n/)) {
     if (line.trim() === '') continue;
     if (++seen > SCAN_LINES) break;
     const m = DECODE_LINE.exec(line);
     if (m) {
       const text = m[1].trim();
-      return text.length ? text : null;
+      if (text.length) return text;
     }
   }
   return null;
+}
+
+/** Read at most `max` bytes from the end of a file. Returns '' on any failure. */
+function tail(path, max) {
+  let fd;
+  try {
+    const size = statSync(path).size;
+    const len = Math.min(size, max);
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, size - len);
+    const text = buf.toString('utf8');
+    // A window that starts mid-file almost certainly starts mid-line.
+    return len < size ? text.slice(text.indexOf('\n') + 1) : text;
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* nothing to do */ } }
+  }
+}
+
+/** A transcript row that is the human speaking — not a tool result, not a sidechain. */
+function isUserTurn(row) {
+  if (row?.type !== 'user' || row.isSidechain === true || row.isMeta === true) return false;
+  const c = row.message?.content;
+  if (typeof c === 'string') return true;
+  if (!Array.isArray(c)) return false;
+  return c.some((b) => b?.type === 'text') && !c.some((b) => b?.type === 'tool_result');
+}
+
+/** Assistant text blocks, in order. */
+function assistantTexts(row) {
+  if (row?.type !== 'assistant' || row.isSidechain === true) return [];
+  const c = row.message?.content;
+  if (typeof c === 'string') return [c];
+  if (!Array.isArray(c)) return [];
+  return c.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text);
+}
+
+/**
+ * Find the decode line in the turn that just ended.
+ *
+ * `last_assistant_message` is not the reply — it is the *last* message of the
+ * turn. A turn that calls tools ends with whatever prose came after the final
+ * tool result, fifteen messages downstream of where the declaration belongs.
+ * The first real turn this plugin ever saw did exactly that: the model declared
+ * correctly in message #1 and `last_assistant_message` was message #15, so the
+ * declaration was recorded as absent. Read the transcript instead, and treat
+ * `last_assistant_message` as the fallback for when it cannot be read.
+ */
+function findDecode(input) {
+  const path = input?.transcript_path;
+  if (typeof path === 'string' && path) {
+    // Two bounded passes: a turn with large tool output can be several MB.
+    for (const window of [2 << 20, 16 << 20]) {
+      const text = tail(path, window);
+      if (!text) break;
+
+      const rows = [];
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        try { rows.push(JSON.parse(line)); } catch { /* truncated or not a row */ }
+      }
+
+      let start = -1;
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        if (isUserTurn(rows[i])) { start = i; break; }
+      }
+      // Boundary not in this window: a wider one may contain it. Never scan
+      // without a boundary — a hit from an earlier turn would be reported as
+      // this turn's declaration, which is worse than reporting none.
+      if (start === -1) continue;
+
+      for (const row of rows.slice(start + 1)) {
+        for (const t of assistantTexts(row)) {
+          const hit = scanMessage(t);
+          if (hit) return hit;
+        }
+      }
+      return null;   // boundary found, turn scanned, nothing declared
+    }
+  }
+  return scanMessage(input?.last_assistant_message);
 }
 
 try {
@@ -39,7 +122,7 @@ try {
   const sessionId = input.session_id;
   if (typeof sessionId !== 'string') quietExit();
 
-  const decode = findDecode(input.last_assistant_message);
+  const decode = findDecode(input);
   const prev = readState(sessionId);
 
   // Only ever touch `decode` and the timestamp. `prompt` stays exactly as

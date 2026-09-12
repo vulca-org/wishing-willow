@@ -27,8 +27,14 @@ function runHook(script, stdinPath, stateDir) {
   if (!existsSync(entry)) {
     return { code: null, stdout: '', stderr: `MISSING: ${entry}`, missing: true };
   }
+  // 真实载荷里的 transcript_path 是绝对路径，用例里写不出来。
+  // 用例写 <CASE_DIR>/…，喂进去之前换成这个用例目录的真实路径。
+  let input = readFileSync(stdinPath);
+  if (input.includes('<CASE_DIR>')) {
+    input = Buffer.from(input.toString('utf8').replaceAll('<CASE_DIR>', dirname(stdinPath)), 'utf8');
+  }
   const r = spawnSync('node', [entry], {
-    input: readFileSync(stdinPath),
+    input,
     env: { ...process.env, WILLOW_STATE_DIR: stateDir },
     encoding: 'utf8',
     timeout: 10_000,

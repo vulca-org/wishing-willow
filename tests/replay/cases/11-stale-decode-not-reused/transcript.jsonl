@@ -1,0 +1,6 @@
+{"type": "user", "isSidechain": false, "timestamp": "2026-09-12T10:00:00.000Z", "message": {"role": "user", "content": "上一轮的请求，和这一轮无关。"}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-12T10:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "你批准的：上一轮的事\n我读成了：上一轮的解码，绝不能被当成这一轮的\n\n正文。"}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-09-12T10:05:00.000Z", "message": {"role": "user", "content": "那就把刚才那份东西整理成一页，给我看看最后长什么样，别改内容。"}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-12T10:05:04.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read", "id": "t9", "input": {}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-09-12T10:05:06.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t9", "content": "…"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-12T10:05:30.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "整理好了，见下。"}]}}

@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-11",
+  "prompt_id": "00000000-0000-4000-8000-000000000011",
+  "transcript_path": "<CASE_DIR>/transcript.jsonl",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "那就把刚才那份东西整理成一页，给我看看最后长什么样，别改内容。"
+}

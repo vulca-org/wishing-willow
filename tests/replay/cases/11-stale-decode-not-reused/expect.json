@@ -1,0 +1,14 @@
+{
+  "note": "本轮没声明，上一轮声明了。扫描必须停在本轮的用户消息处——把上一轮的解码报成本轮的，比报「未声明」更糟：它是假阳性的反面，会让人以为对齐过了。第四关（误报多到被忽略）就是这么死的。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": null,
+    "prompt_startswith": "那就把刚才那份东西"
+  }
+}

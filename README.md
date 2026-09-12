@@ -73,8 +73,17 @@ nothing else breaks.
 | | |
 |---|---|
 | `UserPromptSubmit` | Writes your prompt **verbatim** to `~/.claude/willow/<session>.json`. For substantial requests, asks the model to declare how it read you. Short replies, slash commands and acknowledgements are skipped. |
-| `Stop` | Looks for the declaration in the first dozen lines of the reply. Found → records it. Not found → leaves it `null`. |
+| `Stop` | Reads the transcript of the turn that just ended and looks for the declaration at the top of the model's messages. Found → records it. Not found → leaves it `null`. |
 | `statusLine` | Prints the two rows. |
+
+`Stop` hands the hook a field called `last_assistant_message`, which sounds like
+the reply and is not: it is the *last* message of the turn. A turn that calls
+tools ends with whatever prose followed the final tool result. The first real
+turn this plugin ever saw declared correctly in its opening message and ended
+fifteen messages later, so reading that field recorded the declaration as
+absent. The transcript is read instead, bounded to the turn — scanning past the
+turn boundary could surface an earlier turn's declaration as this one's, which
+is worse than reporting none.
 
 **The asymmetry is the point.** The `prompt` field is written only by the capture
 hook, from the text you submitted. The model has no path to it — not "shouldn't
@@ -134,10 +143,11 @@ structurally could not see.
 
 **replay** runs the hooks against recorded turns and checks the resulting state:
 a real drift (declaration absent), a declared-but-drifting turn, a real aligned
-turn, two bypass paths, malformed input, an English declaration, the legacy
-field name, and an unrecognised one. One case pins the exact key set of the
-state file, so no field that scores the two rows can ever be added
-accidentally. The bypass
+turn, a declaration buried before a dozen tool calls, an earlier turn's
+declaration that must *not* be reused, two bypass paths, malformed input, an
+English declaration, the legacy field name, and an unrecognised one. One case
+pins the exact key set of the state file, so no field that scores the two rows
+can ever be added accidentally. The bypass
 thresholds are calibrated against actual prompts — including the fact that a
 Chinese request carries roughly 2.5× the information of a Latin one at the same
 character count, so weighing characters directly gets it backwards.
