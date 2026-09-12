@@ -28,6 +28,10 @@ Print exactly this, with no preamble beyond a single line of context:
 
 If you already have a `statusLine` key, replace it — Claude Code supports only one.
 
+**The path contains the plugin version.** After `/plugin update willow`, that
+directory changes and the status line goes blank. Re-run `/willow:setup` and
+paste the new path. (Tracked as a known wart, not a mystery.)
+
 Then start a new session, or run any prompt: the status line updates when the
 next assistant message arrives.
 
