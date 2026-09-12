@@ -66,7 +66,7 @@ enum Snapshot {
             let content: AnyView = switch scene.kind {
             case .panel:   AnyView(PanelView(store: store).frame(width: 460))
             case .strip:   AnyView(MenuBarStrip(store: store, seen: seenStore))
-            case .detail:  AnyView(DetailView(store: store, seen: seenStore).frame(width: 640, height: 420))
+            case .detail:  AnyView(DetailView(store: store, seen: seenStore).frame(width: 560, height: 980).background(Color.black))
             }
 
             let renderer = ImageRenderer(content: content)
