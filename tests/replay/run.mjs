@@ -117,6 +117,15 @@ for (const name of caseNames) {
           ok = check(name, 'state.decode', got === want,
             `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
         }
+        // 键集钉死 —— 这条守的是产品最核心的一条设计线：状态文件里不得出现
+        // 任何"两栏是否一致"的判定。那种字段一旦存在，就一定会在声明缺失时
+        // 写错，于是重新制造这个插件要打破的沉默。
+        if (expect.state_keys) {
+          const got = Object.keys(state).sort();
+          const want = [...expect.state_keys].sort();
+          ok = check(name, 'state.keys', JSON.stringify(got) === JSON.stringify(want),
+            `多出 ${got.filter((k) => !want.includes(k)).join(',') || '—'}；少了 ${want.filter((k) => !got.includes(k)).join(',') || '—'}`) && ok;
+        }
         if ('prompt' in expect.state_file) {
           const want = expect.state_file.prompt;
           const got = state.prompt ?? null;

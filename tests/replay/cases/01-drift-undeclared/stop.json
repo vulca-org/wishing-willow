@@ -5,7 +5,5 @@
   "cwd": "/tmp/fake/project",
   "permission_mode": "default",
   "hook_event_name": "Stop",
-  "turn_index": 0,
-  "stop_reason": "end_turn",
   "last_assistant_message": "看完磁盘上的物证了。先说结论，再用你自己这条线的事实链锚定——这两个场景不是两个问题，是同一个缺陷的两种表现。\n\n## 一句话诊断\n\n模型默认优化的是「这份工作能有多好」，你要优化的是「在约束下这份工作能落在哪里」。"
 }

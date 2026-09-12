@@ -1,5 +1,15 @@
 {
   "note": "一个都对不上时不许静默：仍要写状态文件，prompt 与 promptField 同为 null，读方据此显示「读不到本轮输入」而不是空屏。不注入——没有原话就没有可提醒的对象。",
-  "capture": { "exit_code": 0, "stdout": "empty" },
-  "state_file": { "decode": null, "prompt": null, "promptField": null }
+  "capture": {
+    "exit_code": 0,
+    "stdout": "empty"
+  },
+  "state_file": {
+    "decode": null,
+    "prompt": null,
+    "promptField": null
+  },
+  "runtime_fields_exempt": [
+    "user_prompt_raw"
+  ]
 }

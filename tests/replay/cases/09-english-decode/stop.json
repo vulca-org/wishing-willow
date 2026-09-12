@@ -1,0 +1,9 @@
+{
+  "session_id": "test-sess-09",
+  "prompt_id": "00000000-0000-4000-8000-000000000009",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "What you asked: audit silent failure paths, read-only\nHow I read it: list every catch/exit-0 path that swallows an error, no edits\n\nStarting with the hooks directory."
+}

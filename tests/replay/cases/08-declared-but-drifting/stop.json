@@ -1,0 +1,9 @@
+{
+  "session_id": "test-sess-08",
+  "prompt_id": "00000000-0000-4000-8000-000000000008",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "你批准的：找这类问题的通用逻辑，要可复用的方案\n我读成了：去那个仓库里逐文件审计检查表与 spec，找漂移的具体证据\n\n先看仓库结构。"
+}

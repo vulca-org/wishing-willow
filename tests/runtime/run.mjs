@@ -67,6 +67,20 @@ function payloadKeys(bin, event) {
   return [...keys];
 }
 
+/** 每个 hook 载荷都带的公共字段，同样从二进制里取。 */
+function baseKeys(bin) {
+  const r = spawnSync(
+    'grep', ['-a', '-o', '-E', 'return\\{session_id:e\\.id,.{0,200}', bin],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } }
+  );
+  if (r.status !== 0 || !r.stdout) return [];
+  const keys = new Set();
+  for (const m of r.stdout.split('\n')) {
+    for (const k of m.matchAll(/(?:^return\{|[,{])([a-z][a-z0-9_]*):/g)) keys.add(k[1]);
+  }
+  return [...keys];
+}
+
 const bin = findClaude();
 if (!bin) {
   skip('从 claude 二进制取真实字段名', '本机找不到 claude');
@@ -137,6 +151,48 @@ if (bin) {
     'Stop 载荷里有 last_assistant_message',
     stopKeys.includes('last_assistant_message'),
     stopKeys.length ? `载荷键：${stopKeys.join(', ')}` : '二进制里没匹配到 Stop 载荷构造'
+  );
+}
+
+// ── fixture 不得比运行时更丰富 ────────────────────────────────────
+// 文档列了 scratchpad_dir / prompt_start_time / turn_index，二进制里一个都没有。
+// 照文档手写的 fixture 会带上这些字段，于是测试在一个现实中不存在的载荷上通过。
+// 注意本关只看得见直接写在载荷字面量里的键；用 `...` 展开进去的
+// （Stop 的 background_tasks / session_crons）看不见，真要用就走逐例豁免。
+if (bin) {
+  const base = new Set([...baseKeys(bin), 'hook_event_name']);
+  const perEvent = {
+    'user-prompt-submit.json': new Set([...base, ...payloadKeys(bin, 'UserPromptSubmit')]),
+    'stop.json': new Set([...base, ...payloadKeys(bin, 'Stop')]),
+  };
+  // 别名：本插件刻意同时认文档名，fixture 用它是合法的。
+  perEvent['user-prompt-submit.json'].add('user_prompt');
+
+  const CASES = join(REPO, 'tests', 'replay', 'cases');
+  const invented = [];
+  let scanned = 0;
+  for (const c of readdirSync(CASES).filter((d) => !d.startsWith('.')).sort()) {
+    for (const [file, allowed] of Object.entries(perEvent)) {
+      const fp = join(CASES, c, file);
+      if (!existsSync(fp)) continue;
+      let obj;
+      try { obj = JSON.parse(readFileSync(fp, 'utf8')); } catch { continue; }  // 畸形用例本来就该畸形
+      scanned += 1;
+      // 有的用例存在的意义就是喂一个运行时不发的字段（07）。豁免写在它自己的
+      // expect.json 里，理由跟着用例走，不堆在这个文件的白名单里。
+      let exempt = [];
+      try {
+        exempt = JSON.parse(readFileSync(join(CASES, c, 'expect.json'), 'utf8')).runtime_fields_exempt ?? [];
+      } catch { /* 没有 expect.json 就没有豁免 */ }
+      for (const k of Object.keys(obj)) {
+        if (!allowed.has(k) && !exempt.includes(k)) invented.push(`${c}/${file}:${k}`);
+      }
+    }
+  }
+  check(
+    `fixture 用的字段运行时都真的会发（扫了 ${scanned} 个）`,
+    invented.length === 0,
+    invented.length ? `运行时不存在：${invented.join('、')}` : ''
   );
 }
 

@@ -1,0 +1,15 @@
+{
+  "note": "英文声明行。正则一直支持，但到今天为止从没有用例跑过它——写了没跑过的分支和没写一样。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": "list every catch/exit-0 path that swallows an error, no edits",
+    "promptField": "prompt",
+    "prompt_startswith": "Go through the error handling"
+  }
+}

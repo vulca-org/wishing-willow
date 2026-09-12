@@ -55,7 +55,7 @@ try {
       pid: process.ppid,
       cwd: typeof input.cwd === 'string' ? input.cwd : null,
       turnId: typeof input.prompt_id === 'string' ? input.prompt_id : null,
-      turnIndex: typeof input.turn_index === 'number' ? input.turn_index : 0,
+      turnIndex: 0,   // Stop 载荷不带轮次；capture 才知道，这里没有 capture
       updatedAt: new Date().toISOString(),
       prompt: null,
       decode,

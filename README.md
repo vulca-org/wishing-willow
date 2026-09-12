@@ -133,8 +133,11 @@ Three gates, because this plugin has now failed twice in ways a single gate
 structurally could not see.
 
 **replay** runs the hooks against recorded turns and checks the resulting state:
-a real drift (declaration absent), a real aligned turn, two bypass paths,
-malformed input, the legacy field name, and an unrecognised one. The bypass
+a real drift (declaration absent), a declared-but-drifting turn, a real aligned
+turn, two bypass paths, malformed input, an English declaration, the legacy
+field name, and an unrecognised one. One case pins the exact key set of the
+state file, so no field that scores the two rows can ever be added
+accidentally. The bypass
 thresholds are calibrated against actual prompts — including the fact that a
 Chinese request carries roughly 2.5× the information of a Latin one at the same
 character count, so weighing characters directly gets it backwards.

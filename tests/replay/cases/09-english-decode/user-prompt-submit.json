@@ -1,0 +1,8 @@
+{
+  "session_id": "test-sess-09",
+  "prompt_id": "00000000-0000-4000-8000-000000000009",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Go through the error handling in every script under this directory and tell me which paths fail silently. Do not change anything yet."
+}
