@@ -12,7 +12,8 @@
     "tag": "排版成一页",
     "reminded": true,
     "prompt_startswith": "把上一轮那份东西",
-    "origin": "user"
+    "origin": "user",
+    "turnEndedAt": "<NONNULL>"
   },
   "log_lines": 1,
   "log_last": {

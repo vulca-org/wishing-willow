@@ -13,6 +13,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
         case unreadable         // hook 读不到本轮输入 —— 插件坏了，不是模型没说话
         case awaiting           // 还没有本轮原话（装插件时正好在一轮中间）
         case notAsked           // 这一轮压根没问（太短或是系统消息）—— 不是模型没说话
+        case inProgress         // 问了，模型还在回答 —— 声明要等这一轮写出来
     }
 
     var id: String { record.sessionId }
@@ -45,6 +46,9 @@ struct SessionState: Identifiable, Sendable, Equatable {
         // 「没问」和「问了没答」必须分开：把「好的 继续吧」报成「问了，模型没写声明」
         // 是一次假警报，而会被学会忽略的警报等于没有。旧记录没有这一位，保持原判。
         if record.reminded == false { return .notAsked }
+        // 还在回答：插件在 Stop 时才写下 turnEndedAt。在那之前「没有声明」只说明模型还没答完，
+        // 报成「问了，模型没写声明」就是每一轮开头都冒一次的假警报（用户 2026-09-12 实测抓到的橙色字）。
+        if record.hasTurnEndMarker && record.turnEndedAt == nil { return .inProgress }
         return .undeclared
     }
 

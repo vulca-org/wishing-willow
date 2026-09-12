@@ -8,6 +8,7 @@
     "decode": null,
     "promptField": "prompt",
     "prompt_startswith": "<task-notification>",
-    "origin": "system"
+    "origin": "system",
+    "turnEndedAt": null
   }
 }

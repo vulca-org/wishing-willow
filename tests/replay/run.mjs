@@ -162,7 +162,9 @@ for (const name of caseNames) {
         for (const [k, want] of Object.entries(expect.state_file)) {
           if (SPECIAL.has(k)) continue;
           const got = state[k] ?? null;
-          ok = check(name, `state.${k}`, got === want,
+          // "<NONNULL>"：只断言「写了」，不断言写了什么（时间戳这类每次都不同的值）。
+          const hit = want === '<NONNULL>' ? got !== null : got === want;
+          ok = check(name, `state.${k}`, hit,
             `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
         }
         if (expect.state_file.prompt_startswith) {

@@ -27,6 +27,7 @@
     "decode",
     "tag",
     "endedAt",
-    "origin"
+    "origin",
+    "turnEndedAt"
   ]
 }

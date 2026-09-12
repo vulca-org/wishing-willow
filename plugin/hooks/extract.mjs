@@ -219,7 +219,7 @@ try {
   const endedAt = new Date().toISOString();
 
   if (prev) {
-    writeState(sessionId, { ...prev, decode, tag, updatedAt: endedAt });
+    writeState(sessionId, { ...prev, decode, tag, turnEndedAt: endedAt, updatedAt: endedAt });
     // 只在 capture 跑过的时候记日志：没有 capture 就没有原话，也没有「问没问」，
     // 记一条三个字段都是 null 的东西只会让统计更难看懂。
     appendTurnLog(sessionId, {
@@ -249,6 +249,7 @@ try {
       prompt: null,
       decode,
       tag,
+      turnEndedAt: endedAt,
       endedAt: null,
     });
   }

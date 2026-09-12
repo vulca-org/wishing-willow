@@ -44,6 +44,13 @@ struct TurnView: View {
                     detail: "插件是在这一轮中间装上的，下一轮开始记录。",
                     tint: .secondary
                 )
+            case .inProgress:
+                banner(
+                    icon: "ellipsis",
+                    title: "模型正在回答",
+                    detail: "声明要等这一轮写出来才读得到。",
+                    tint: .secondary
+                )
             case .notAsked:
                 banner(
                     icon: "text.bubble",

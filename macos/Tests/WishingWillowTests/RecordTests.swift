@@ -80,6 +80,18 @@ struct RecordTests {
         #expect(legacy.isSystemMessage)
     }
 
+    @Test("回答进行中不是「问了没答」：turnEndedAt 键在且为 null → .inProgress；旧记录保持原判")
+    func inProgress() throws {
+        let running = try decode(#"{"schema":7,"sessionId":"a","prompt":"一句够长需要提醒的请求","promptField":"prompt","reminded":true,"decode":null,"turnEndedAt":null}"#)
+        #expect(SessionState(record: running, now: .now).declaration == .inProgress)
+
+        let ended = try decode(#"{"schema":7,"sessionId":"b","prompt":"一句够长需要提醒的请求","promptField":"prompt","reminded":true,"decode":null,"turnEndedAt":"2026-09-12T18:40:00.000Z"}"#)
+        #expect(SessionState(record: ended, now: .now).declaration == .undeclared)
+
+        let legacy = try decode(#"{"schema":6,"sessionId":"c","prompt":"旧记录没有 turnEndedAt","promptField":"prompt","reminded":true,"decode":null}"#)
+        #expect(SessionState(record: legacy, now: .now).declaration == .undeclared)
+    }
+
     @Test("空白的 decode 等于没有 decode")
     func blankDecode() throws {
         let r = try decode(#"{"schema":2,"sessionId":"a","prompt":"x 这是一句够长的请求","promptField":"prompt","decode":"   "}"#)

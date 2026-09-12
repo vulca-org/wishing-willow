@@ -76,6 +76,10 @@ try {
     reminded: !bypass,
     decode: null,          // absence is the signal; extract.mjs fills it in
     tag: null,             // ≤6 字，同样由 extract.mjs 填
+    // 这一轮还没结束。extract 在 Stop 时写下时间戳。没有这一位，读方分不清
+    // 「模型还在回答」和「答完了没写声明」—— 2026-09-12 用户实测：每一轮一开头
+    // 灵动岛都冒一次橙色的「问了，模型没写声明」，而模型那时一个字都还没回。
+    turnEndedAt: null,
     endedAt: null,
   });
 

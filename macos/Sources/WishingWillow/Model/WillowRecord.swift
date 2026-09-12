@@ -35,12 +35,16 @@ struct WillowRecord: Sendable, Equatable {
     var decode: String?
     /// 模型自己压出来的 ≤6 字标签。刘海常亮层唯一放得下的东西。
     var tag: String?
+    /// 这一轮什么时候结束的。插件在 Stop 时写下；null = 还在回答。
+    var turnEndedAt: Date?
+    /// 记录里有没有 `turnEndedAt` 这个键。旧记录没有，没法区分「在回答」和「答完了」。
+    var hasTurnEndMarker: Bool
     var endedAt: Date?
 }
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, endedAt
+        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, turnEndedAt, endedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -69,6 +73,8 @@ extension WillowRecord: Decodable {
             promptOrigin = .absent
         }
 
+        hasTurnEndMarker = c.contains(.turnEndedAt)
+        turnEndedAt = try Self.date(c, .turnEndedAt)
         updatedAt = try Self.date(c, .updatedAt)
         endedAt = try Self.date(c, .endedAt)
     }

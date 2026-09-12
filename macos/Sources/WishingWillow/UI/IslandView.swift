@@ -184,6 +184,8 @@ struct IslandExpandedContent: View {
             row("我读成了", "等这一轮开始", Color.white.opacity(0.5))
         case .notAsked:
             row("我读成了", "这一轮没问（太短或是系统消息）", Color.white.opacity(0.5))
+        case .inProgress:
+            row("我读成了", "模型正在回答，声明写出来才看得到", Color.white.opacity(0.5))
         }
     }
 
