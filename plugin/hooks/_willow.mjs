@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdir
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 8;
+export const SCHEMA = 9;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {

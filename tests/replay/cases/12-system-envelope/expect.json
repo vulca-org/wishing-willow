@@ -9,6 +9,7 @@
     "promptField": "prompt",
     "prompt_startswith": "<task-notification>",
     "origin": "system",
-    "turnEndedAt": null
+    "turnEndedAt": null,
+    "transcriptPath": null
   }
 }

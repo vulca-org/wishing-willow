@@ -96,6 +96,9 @@ try {
     cwd: typeof input.cwd === 'string' ? input.cwd : null,
     turnId: typeof input.prompt_id === 'string' ? input.prompt_id : null,
     transcriptOffset: transcriptLength(input.transcript_path),
+    // app 要在一轮进行中实时读这一轮（声明一写出就显示、进度跟着真实工具调用走），
+    // 得知道文件在哪。2026-09-12 实测：声明写出后要等整轮结束才读，中位在后台躺 280 秒。
+    transcriptPath: typeof input.transcript_path === 'string' ? input.transcript_path : null,
     turnIndex: (prev?.turnIndex ?? -1) + 1,
     updatedAt: new Date().toISOString(),
     prompt,

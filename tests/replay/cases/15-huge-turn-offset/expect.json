@@ -14,6 +14,7 @@
   "state_file": {
     "decode": "逐个文件找吞掉错误的路径，只列不改。",
     "tag": "列静默失败",
-    "prompt_startswith": "把这个目录整个扫一遍"
+    "prompt_startswith": "把这个目录整个扫一遍",
+    "transcriptPath": "<NONNULL>"
   }
 }
