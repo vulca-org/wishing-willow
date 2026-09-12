@@ -15,6 +15,7 @@ enum FocusRule {
     static func focus(_ store: WillowStore, _ seen: SeenStore) -> SessionState? {
         let l = live(store)
         return l.first { $0.declaration == .unreadable }
+            ?? l.first { store.recentWithdraw[$0.id] != nil }
             ?? l.first { seen.isUnread($0) && $0.flaggedByModel }
             ?? l.first { seen.isUnread($0) }
             ?? l.first
@@ -31,8 +32,18 @@ enum FocusRule {
     /// 不能把上一轮的解码冒充成这一轮的，也不该退回一个被截断的工作区名。
     static func label(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Label? {
         if s.declaration == .unreadable { return Label(text: "读不到输入", carried: false) }
+        if let w = store.recentWithdraw[s.id] {
+            return Label(text: w.kind == .interrupted ? "已撤回" : "撤回排队", carried: true)
+        }
+        if s.declaration == .interrupted { return nil }       // 撤回提示过后缩回刘海
         // 回答中：声明还没有，就老实说在回答。先前退回工作区名，截断成「twitter-cont…」，没有信息。
-        if s.declaration == .inProgress { return Label(text: "回答中", carried: true) }
+        if s.declaration == .inProgress {
+            let p = store.progress(for: s)
+            if let t = p?.tag { return Label(text: t, carried: false) }      // 声明刚写出——临时标签
+            if p?.decode != nil { return Label(text: "有新声明", carried: false) }
+            if let p, p.firstWriteAt == nil { return Label(text: "思考中", carried: true) }
+            return Label(text: "回答中", carried: true)
+        }
         guard seen.isUnread(s) else { return nil }          // 看过了 → 两翼缩回刘海，不遮东西
         if s.declaration == .undeclared { return Label(text: "没写声明", carried: false) }
         if let t = s.tag { return Label(text: t, carried: false) }

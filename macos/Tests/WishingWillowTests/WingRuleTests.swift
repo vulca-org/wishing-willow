@@ -31,6 +31,16 @@ struct WingRuleTests {
         let noTag = try state(#"{"schema":8,"sessionId":"d",\#(cwd),"turnId":"t4","prompt":"一句够长的请求","promptField":"prompt","origin":"user","reminded":true,"decode":"读成了","turnEndedAt":"2026-09-12T19:00:00.000Z"}"#)
         #expect(FocusRule.label(noTag, seen, store)?.text == "有新声明")
 
+        // 撤回：没有近期撤回事件时，被打断的这一轮两翼缩回刘海；有事件时短暂显示「已撤回」「撤回排队」
+        let rec = try JSONDecoder().decode(WillowRecord.self, from: Data(#"{"schema":9,"sessionId":"e",\#(cwd),"turnId":"t5","prompt":"一句够长的请求","promptField":"prompt","origin":"user","reminded":true,"decode":null,"turnEndedAt":null}"#.utf8))
+        let interrupted = SessionState(record: rec, now: .now, liveInterruptedAt: .now)
+        #expect(interrupted.declaration == .interrupted)
+        #expect(FocusRule.label(interrupted, seen, store) == nil)
+        store.noteWithdraw(sessionId: "e", kind: .interrupted)
+        #expect(FocusRule.label(interrupted, seen, store)?.text == "已撤回")
+        store.noteWithdraw(sessionId: "a", kind: .queued)
+        #expect(FocusRule.label(running, seen, store)?.text == "撤回排队")
+
         for s in [running, declared, undeclared, noTag] {
             #expect(FocusRule.label(s, seen, store)?.text.contains("twitter") != true)
         }

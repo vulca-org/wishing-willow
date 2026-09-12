@@ -88,7 +88,9 @@ struct IslandView: View {
                                      : Color.white.opacity(l.carried ? 0.55 : 1))
                     .lineLimit(1)
                     .id(l.text)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                    // 旧的字朝刘海方向退回去，新的字从外侧进来——撤回时看得出是「收回」。
+                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
+                                            removal: .move(edge: .leading).combined(with: .opacity)))
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
@@ -101,14 +103,39 @@ struct IslandView: View {
         .animation(.easeOut(duration: 0.35), value: l.text)
     }
 
-    /// 回答中是会动的省略号——运动表示「事情还在进行」；其余是一个点。
+    /// 进行中：会动的省略号 + 从按回车起的计时（这是真的在走的东西）；其余是一个点。
     @ViewBuilder
     private func indicator(_ f: SessionState) -> some View {
-        if f.declaration == .inProgress {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.75))
-                .symbolEffect(.pulse, options: .repeating)
+        if let w = store.recentWithdraw[f.id] {
+            // 撤回：箭头跳一下；打断时计时停在撤回那一刻并划掉。
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .symbolEffect(.bounce, value: w.at)
+                if w.kind == .interrupted, let start = f.record.updatedAt,
+                   let end = store.progress(for: f)?.interruptedAt {
+                    Text(Clock.text(end.timeIntervalSince(start)))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .strikethrough(true, color: Color.white.opacity(0.5))
+                }
+            }
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
+        } else if f.declaration == .inProgress {
+            HStack(spacing: 5) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .symbolEffect(.pulse, options: .repeating)
+                if let start = f.record.updatedAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text(Clock.text(ctx.date.timeIntervalSince(start)))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    }
+                }
+            }
         } else {
             Circle().fill(tint(f)).frame(width: 7, height: 7)
         }
@@ -191,46 +218,122 @@ struct IslandExpandedContent: View {
             row("我读成了", "等这一轮开始", Color.white.opacity(0.5))
         case .notAsked:
             row("我读成了", "这一轮没问（太短或是系统消息）", Color.white.opacity(0.5))
+        case .interrupted:
+            LiveTurnSection(started: s.record.updatedAt, progress: store.progress(for: s))
         case .inProgress:
-            // 加载态：会动的省略号 + 一条扫光占位。声明到达时整行被真正的解码替换，淡入。
-            VStack(alignment: .leading, spacing: 5) {
-                Text("我读成了")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.45))
-                HStack(spacing: 6) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.6))
-                        .symbolEffect(.pulse, options: .repeating)
-                    Text("模型正在回答，声明写出来会出现在这里")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.5))
-                }
-                ShimmerBar().frame(width: 280, height: 7)
-            }
+            // 假进度条去掉了——它暗示一个并不存在的完成度。这里只放真的在发生的事。
+            LiveTurnSection(started: s.record.updatedAt, progress: store.progress(for: s))
         }
     }
 
 }
 
-/// 加载占位条：一道光从左到右扫过。只在「回答中」出现——运动表示事情还在进行。
-struct ShimmerBar: View {
+
+enum Clock {
+    static func text(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+                         : String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+/// 进行中这一轮的实时区块：阶段 + 计时，声明写出后换成声明（标「实时」），下面是最近三个真实步骤。
+///
+/// 阶段只说读得到的事实：还没落盘就是在思考（思考块没有文字，读不到想了什么）；
+/// 开始落盘还没声明；声明写出。步骤来自工具调用，时间是距按回车的偏移。
+struct LiveTurnSection: View {
+    let started: Date?
+    let progress: TurnProgress?
+
     var body: some View {
-        TimelineView(.animation) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            let phase = CGFloat(t.truncatingRemainder(dividingBy: 1.4) / 1.4)
-            GeometryReader { geo in
-                let w = geo.size.width
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.08))
-                    .overlay(alignment: .leading) {
-                        LinearGradient(colors: [.clear, Color.white.opacity(0.25), .clear],
-                                       startPoint: .leading, endPoint: .trailing)
-                            .frame(width: w * 0.35)
-                            .offset(x: -w * 0.35 + w * 1.35 * phase)
+        VStack(alignment: .leading, spacing: 6) {
+            if let cut = progress?.interruptedAt {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                    Text("你撤回了这一轮").font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 0)
+                    if let started {
+                        Text("跑了 " + Clock.text(cut.timeIntervalSince(started)))
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.45))
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .foregroundStyle(Color.white)
+                if let d = progress?.decode {
+                    Text("撤回前读成了：" + d)
+                        .font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.45)).lineLimit(2)
+                }
+            } else if let d = progress?.decode {
+                HStack(spacing: 6) {
+                    Text("我读成了").font(.system(size: 10, weight: .medium)).foregroundStyle(Color.white.opacity(0.45))
+                    Text("实时")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.white.opacity(0.14), in: Capsule())
+                        .foregroundStyle(Color.white.opacity(0.8))
+                }
+                Text(d)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(d.hasPrefix("⚠") ? Color.orange : Color.white)
+                    .lineLimit(2)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                Text("我读成了").font(.system(size: 10, weight: .medium)).foregroundStyle(Color.white.opacity(0.45))
+                HStack(spacing: 6) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text(phase).font(.system(size: 11.5)).foregroundStyle(Color.white.opacity(0.6))
+                    Spacer(minLength: 0)
+                    if let started {
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            Text(Clock.text(ctx.date.timeIntervalSince(started)))
+                                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.5))
+                        }
+                    }
+                }
+            }
+            if let steps = progress?.steps, !steps.isEmpty {
+                let recent = Array(steps.suffix(3))
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(recent.enumerated()), id: \.offset) { i, st in
+                        let current = i == recent.count - 1
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.white.opacity(current && progress?.interruptedAt == nil ? 0.9 : 0.28))
+                                .frame(width: 5, height: 5)
+                            Text(st.text)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.white.opacity(current && progress?.interruptedAt == nil ? 0.85 : 0.4))
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            if let at = st.at, let started {
+                                Text("+" + Clock.text(at.timeIntervalSince(started)))
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(Color.white.opacity(0.3))
+                            }
+                        }
+                    }
+                    if steps.count > 3 {
+                        Text("共 \(steps.count) 步")
+                            .font(.system(size: 9.5)).foregroundStyle(Color.white.opacity(0.3))
+                    }
+                }
+                .padding(.top, 2)
             }
         }
+        .animation(.easeOut(duration: 0.3), value: progress?.decode)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: progress?.interruptedAt)
+        .animation(.easeOut(duration: 0.25), value: progress?.steps.count)
+    }
+
+    private var phase: String {
+        guard let p = progress else { return "模型正在回答" }
+        if p.firstWriteAt == nil { return "思考中" }
+        return p.steps.isEmpty ? "开始回答，还没写出声明" : "在执行，还没写出声明"
     }
 }

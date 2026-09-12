@@ -24,6 +24,9 @@ struct WillowRecord: Sendable, Equatable {
     var pid: Int32?
     var cwd: String?
     var turnId: String?
+    /// 本轮聊天记录的路径与提交时的字节长度——app 从这里往后实时读这一轮。
+    var transcriptPath: String?
+    var transcriptOffset: Int?
     var turnIndex: Int?
     var updatedAt: Date?
     var prompt: String?
@@ -44,7 +47,7 @@ struct WillowRecord: Sendable, Equatable {
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, turnEndedAt, endedAt
+        case schema, sessionId, pid, cwd, turnId, transcriptPath, transcriptOffset, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, turnEndedAt, endedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -54,6 +57,8 @@ extension WillowRecord: Decodable {
         pid = try c.decodeIfPresent(Int32.self, forKey: .pid)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
         turnId = try c.decodeIfPresent(String.self, forKey: .turnId)
+        transcriptPath = try c.decodeIfPresent(String.self, forKey: .transcriptPath)
+        transcriptOffset = try c.decodeIfPresent(Int.self, forKey: .transcriptOffset)
         turnIndex = try c.decodeIfPresent(Int.self, forKey: .turnIndex)
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         reminded = try c.decodeIfPresent(Bool.self, forKey: .reminded)

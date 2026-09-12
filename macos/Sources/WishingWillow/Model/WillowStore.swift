@@ -30,6 +30,41 @@ final class WillowStore {
     var onDeclarationArrived: ((SessionState) -> Void)?
     private var lastDecoded: [String: (turn: String, decoded: Bool)] = [:]
 
+    /// 实时读到的进行中这一轮，键是「会话|轮次」——换了一轮不串到新一轮上。
+    /// 临时的：整轮结束后以插件在 Stop 写下的为准。
+    private(set) var liveProgress: [String: TurnProgress] = [:]
+
+    enum WithdrawKind: Sendable, Equatable { case interrupted, queued }
+    struct Withdraw: Sendable, Equatable { let kind: WithdrawKind; let at: Date }
+    /// 最近的撤回事件（按会话），只显示几秒，过期自动清掉。
+    private(set) var recentWithdraw: [String: Withdraw] = [:]
+    static let withdrawShown: TimeInterval = 2.5
+    var onWithdraw: ((SessionState, WithdrawKind) -> Void)?
+
+    func noteWithdraw(sessionId: String, kind: WithdrawKind) {
+        let w = Withdraw(kind: kind, at: Date())
+        recentWithdraw[sessionId] = w
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.withdrawShown))
+            guard let self, self.recentWithdraw[sessionId] == w else { return }
+            self.recentWithdraw[sessionId] = nil
+            self.onLiveChange?()
+        }
+    }
+
+    private func liveKey(_ s: SessionState) -> String? { s.record.turnId.map { "\(s.id)|\($0)" } }
+    private let follower = TranscriptFollower()
+    /// 已经触发过「声明到达」的轮次（会话|轮次）。实时读先到、Stop 后到，只展开一次。
+    private var arrivedTurns: Set<String> = []
+    private var liveTimer: Timer?
+    /// 实时进度有实质变化（声明到了、多了一步、开始落盘）时回调——展开态据此重算高度。
+    var onLiveChange: (() -> Void)?
+
+    func progress(for s: SessionState) -> TurnProgress? {
+        guard s.declaration == .inProgress || s.declaration == .interrupted, let k = liveKey(s) else { return nil }
+        return liveProgress[k]
+    }
+
     private var lastTurnIds: [String: String] = [:]
     private var watcher: DirectoryWatcher?
     private var poll: Timer?
@@ -62,6 +97,17 @@ final class WillowStore {
         t.tolerance = 2
         RunLoop.main.add(t, forMode: .common)
         poll = t
+
+        // 进行中的轮次每秒读一次聊天记录。没有进行中的轮次时什么都不读。
+        let lt = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.sessions.contains(where: { $0.declaration == .inProgress }) else { return }
+                self.refreshLive()
+            }
+        }
+        lt.tolerance = 0.3
+        RunLoop.main.add(lt, forMode: .common)
+        liveTimer = lt
     }
 
     func stop() {
@@ -69,6 +115,8 @@ final class WillowStore {
         watcher = nil
         poll?.invalidate()
         poll = nil
+        liveTimer?.invalidate()
+        liveTimer = nil
     }
 
     func reload() {
@@ -89,7 +137,9 @@ final class WillowStore {
             guard let data = try? Data(contentsOf: url),
                   let record = try? JSONDecoder().decode(WillowRecord.self, from: data)
             else { continue }   // 半写入或旧格式：跳过，下一次扫描会看到完整的
-            found.append(SessionState(record: record, now: now))
+            let lp = liveProgress["\(record.sessionId)|\(record.turnId ?? "")"]
+            found.append(SessionState(record: record, now: now,
+                                      liveLastEvent: lp?.lastEventAt, liveInterruptedAt: lp?.interruptedAt))
         }
 
         // 一轮刚开始 = turnId 变了、还没有解码、而且这一轮确实问了。
@@ -118,14 +168,74 @@ final class WillowStore {
         for s in found {
             guard let turn = s.record.turnId else { continue }
             let has = s.record.decode?.isEmpty == false
-            if let had = lastDecoded[s.id], had.turn == turn, !had.decoded, has, !s.isStale { arrived.append(s) }
+            if let had = lastDecoded[s.id], had.turn == turn, !had.decoded, has, !s.isStale,
+               !arrivedTurns.contains("\(s.id)|\(turn)") {
+                arrivedTurns.insert("\(s.id)|\(turn)")
+                arrived.append(s)
+            }
             lastDecoded[s.id] = (turn, has)
         }
         if primed, let s = arrived.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
             onDeclarationArrived?(s)
         }
+        refreshLive()
         primed = true
         onReload?()
+    }
+
+    /// 读进行中（以及刚被打断）各轮新增的聊天记录。只读不写。
+    func refreshLive() {
+        var next: [String: TurnProgress] = [:]
+        var changed = false
+        var interruptChanged = false
+        var withdrawals: [(SessionState, WithdrawKind)] = []
+        for s in sessions where s.declaration == .inProgress || s.declaration == .interrupted {
+            guard let pid = s.record.pid, SessionState.processIsAlive(pid),
+                  let path = s.record.transcriptPath, let off = s.record.transcriptOffset,
+                  let key = liveKey(s) else { continue }
+            guard let p = follower.progress(key: key, path: path, offset: off) else { continue }
+            let old = liveProgress[key]
+            if old?.decode != p.decode || old?.steps.count != p.steps.count
+                || old?.firstWriteAt != p.firstWriteAt || old?.thinkingSeen != p.thinkingSeen { changed = true }
+            if (old?.interruptedAt == nil) != (p.interruptedAt == nil) { interruptChanged = true }
+            next[key] = p
+            if primed {                                             // 启动时已有的事件不闪
+                if p.decode != nil, p.interruptedAt == nil, !arrivedTurns.contains(key) {
+                    arrivedTurns.insert(key)
+                    onDeclarationArrived?(s)
+                }
+                if p.interruptedAt != nil, old != nil, old?.interruptedAt == nil { withdrawals.append((s, .interrupted)) }
+                if p.withdrawnQueued.count > (old?.withdrawnQueued.count ?? p.withdrawnQueued.count) {
+                    withdrawals.append((s, .queued))
+                }
+            } else if p.decode != nil {
+                arrivedTurns.insert(key)
+            }
+        }
+        if next.count != liveProgress.count { changed = true }
+        liveProgress = next
+        follower.forget(keeping: Set(next.keys))
+        let current = Set(sessions.compactMap(liveKey))
+        arrivedTurns.formIntersection(current)
+
+        // 打断要立刻反映到声明状态上，不等下一次 5 秒的整体扫描。
+        if interruptChanged {
+            let now = Date()
+            sessions = sessions.map { s in
+                let lp = liveKey(s).flatMap { next[$0] }
+                return SessionState(record: s.record, now: now,
+                                    liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
+                                    liveInterruptedAt: lp?.interruptedAt)
+            }
+            changed = true
+        }
+        for (s, kind) in withdrawals {
+            noteWithdraw(sessionId: s.id, kind: kind)
+            let fresh = sessions.first { $0.id == s.id } ?? s
+            onWithdraw?(fresh, kind)
+            changed = true
+        }
+        if changed { onLiveChange?() }
     }
 
     private var primed = false

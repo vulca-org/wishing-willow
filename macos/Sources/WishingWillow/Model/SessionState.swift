@@ -14,11 +14,17 @@ struct SessionState: Identifiable, Sendable, Equatable {
         case awaiting           // 还没有本轮原话（装插件时正好在一轮中间）
         case notAsked           // 这一轮压根没问（太短或是系统消息）—— 不是模型没说话
         case inProgress         // 问了，模型还在回答 —— 声明要等这一轮写出来
+        case interrupted        // 你打断了这一轮 —— 不会有声明，也不会有 Stop
     }
 
     var id: String { record.sessionId }
     let record: WillowRecord
     let now: Date
+    /// 实时读到的这一轮最后一次落盘时间。状态文件在一轮进行中不更新，
+    /// 只看它的话，一轮超过 10 分钟就会被误判过期（今天实测最长一轮 1912 秒）。
+    var liveLastEvent: Date? = nil
+    /// 实时读到的打断时间。
+    var liveInterruptedAt: Date? = nil
 
     var prompt: String? { record.prompt }
     var tag: String? {
@@ -48,7 +54,9 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if record.reminded == false { return .notAsked }
         // 还在回答：插件在 Stop 时才写下 turnEndedAt。在那之前「没有声明」只说明模型还没答完，
         // 报成「问了，模型没写声明」就是每一轮开头都冒一次的假警报（用户 2026-09-12 实测抓到的橙色字）。
-        if record.hasTurnEndMarker && record.turnEndedAt == nil { return .inProgress }
+        if record.hasTurnEndMarker && record.turnEndedAt == nil {
+            return liveInterruptedAt == nil ? .inProgress : .interrupted
+        }
         return .undeclared
     }
 
@@ -67,7 +75,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
     var isStale: Bool {
         if record.endedAt != nil { return true }
         if let pid = record.pid, !Self.processIsAlive(pid) { return true }
-        guard let updated = record.updatedAt else { return true }
+        guard let updated = [record.updatedAt, liveLastEvent].compactMap({ $0 }).max() else { return true }
         return now.timeIntervalSince(updated) > Self.staleAfter
     }
 

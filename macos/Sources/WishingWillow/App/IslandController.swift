@@ -59,6 +59,8 @@ final class IslandController {
 
         store.onDeclarationArrived = { [weak self] _ in self?.flash() }
         store.onReload = { [weak self] in self?.layout(animated: true) }
+        store.onLiveChange = { [weak self] in self?.layout(animated: true) }
+        store.onWithdraw = { [weak self] _, kind in self?.withdraw(kind) }
         store.start()
         state.shapeSize = targetShapeSize(expanded: false)
         placeStage(state.shapeSize)
@@ -151,7 +153,7 @@ final class IslandController {
     /// 演示模式的日志。只在 --present 下写 stderr。
     private func demoLog(_ msg: String) {
         guard PresentDemo.seconds != nil else { return }
-        FileHandle.standardError.write(Data("\(Date()) \(msg)\n".utf8))
+        FileHandle.standardError.write(Data("\(Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(Date())) \(msg)\n".utf8))
     }
 
     private func hover(_ inside: Bool) {
@@ -183,6 +185,19 @@ final class IslandController {
                 guard let self else { return }
                 if !self.panel.frame.contains(NSEvent.mouseLocation) { self.setExpanded(false, reason: "flash-timeout") }
             }
+        }
+    }
+
+    /// 撤回：两翼换成「已撤回 / 撤回排队」（由 FocusRule 读 recentWithdraw），停一会儿后弹回刘海。
+    /// 若正展开着且是打断，让「你撤回了这一轮」停 1.8 秒再收。
+    private func withdraw(_ kind: WillowStore.WithdrawKind) {
+        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored withdraw \(kind)"); return }
+        demoLog("withdraw \(kind)")
+        layout(animated: true)
+        guard kind == .interrupted, state.expanded, !state.detail else { return }
+        autoCollapse?.invalidate()
+        autoCollapse = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.setExpanded(false, reason: "withdraw") }
         }
     }
 

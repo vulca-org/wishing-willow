@@ -136,13 +136,7 @@ struct DetailView: View {
                 Text(s.prompt ?? "—").font(.system(size: 11.5)).lineLimit(3)
             }
             label("我读成了")
-            HStack(spacing: 6) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("模型正在回答").font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.5))
-            }
+            LiveTurnSection(started: s.record.updatedAt, progress: store.progress(for: s))
         }
         .padding(.vertical, 9)
         .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5) }

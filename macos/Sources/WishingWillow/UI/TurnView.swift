@@ -44,6 +44,13 @@ struct TurnView: View {
                     detail: "插件是在这一轮中间装上的，下一轮开始记录。",
                     tint: .secondary
                 )
+            case .interrupted:
+                banner(
+                    icon: "arrow.uturn.backward",
+                    title: "你撤回了这一轮",
+                    detail: "打断不会写出声明。",
+                    tint: .secondary
+                )
             case .inProgress:
                 banner(
                     icon: "ellipsis",
