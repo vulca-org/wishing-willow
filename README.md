@@ -130,6 +130,15 @@ tool at all.
 echoes your words while doing something else. Only you can catch that. This plugin
 makes the declaration visible; it does not verify it.
 
+**It changes the thing it measures.** The reminder asks the model to state how it
+read you *before* it answers. Some of the declaration rate — 9 turns out of 9 in
+the first day of real use — is very likely the model reading the request more
+carefully because it has to write the line. That is probably a good thing, but it
+means this is an intervention, not just an instrument, and **the baseline is gone
+for good**: there is no longer a way to measure how often the model would have
+drifted without it. Any later claim about how much drift there is has to say
+which side of that line it was measured on.
+
 **It has no idea whether you're drifting productively.** Plenty of turns go somewhere
 you didn't specify and that's fine. The two rows are information, not a verdict.
 
