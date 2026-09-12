@@ -73,7 +73,7 @@ for (const name of caseNames) {
   // state_file 的未知键（14-tag-line 假绿）和这里的 log_* 。
   const TOP_KEYS = new Set([
     'note', 'env', 'transcript_two_phase', 'runtime_fields_exempt',
-    'capture', 'extract', 'state_file', 'state_keys', 'log_lines', 'log_last',
+    'capture', 'extract', 'state_file', 'state_keys', 'log_lines', 'log_last', 'steps', 'session_id',
   ]);
   for (const k of Object.keys(expect)) {
     if (!TOP_KEYS.has(k)) check(name, 'expect.keys', false, `runner 不认识期望键 ${k}`);
@@ -91,6 +91,27 @@ for (const name of caseNames) {
       writeFileSync(liveTranscript, readFileSync(join(dir, 'transcript.pre.jsonl')));
     }
     const env = expect.env ?? undefined;
+
+    // 多步序列：真实会话里一轮之内不止「提交一次、结束一次」——进行中插进来的
+    // 系统通知、被打断之后来的新消息（2026-09-12 两种都在真实日志里丢过整轮）。
+    if (Array.isArray(expect.steps)) {
+      for (const [i, st] of expect.steps.entries()) {
+        if (st.append) {
+          appendFileSync(join(stateDir, 'transcript.jsonl'), readFileSync(join(dir, st.append)));
+          continue;
+        }
+        const script = st.hook === 'capture' ? 'capture.mjs' : st.hook === 'extract' ? 'extract.mjs' : null;
+        if (!script) { check(name, `steps[${i}]`, false, `未知步骤 ${JSON.stringify(st)}`); continue; }
+        const r = runHook(script, join(dir, st.input), stateDir, env);
+        let ok = check(name, `steps[${i}].${st.hook}.exit`, r.code === 0, `exit=${r.code} ${(r.stderr || '').slice(0, 80)}`);
+        if (st.stdout) {
+          const injected = r.stdout.trim().length > 0;
+          ok = check(name, `steps[${i}].${st.hook}.stdout`, injected === (st.stdout === 'inject'),
+            st.stdout === 'inject' ? '期望注入，却为空' : `期望不注入，却输出了 ${r.stdout.trim().length} 字符`) && ok;
+        }
+        marks.push(`${st.hook}:${ok ? 'ok' : 'FAIL'}`);
+      }
+    }
 
     // ── capture (UserPromptSubmit) ────────────────────────────────────────
     const ups = join(dir, 'user-prompt-submit.json');
@@ -193,7 +214,7 @@ for (const name of caseNames) {
     }
     // ── 轮次日志 ─────────────────────────────────────────────────────────
     if (expect.log_lines !== undefined || expect.log_last !== undefined) {
-      const sid = (() => { try { return read(stop).session_id ?? read(ups).session_id; } catch { return null; } })();
+      const sid = expect.session_id ?? (() => { try { return read(stop).session_id ?? read(ups).session_id; } catch { return null; } })();
       const logPath = sid ? join(stateDir, `${sid}.log.jsonl`) : null;
       const lines = logPath && existsSync(logPath)
         ? readFileSync(logPath, 'utf8').split('\n').filter((l) => l.trim())

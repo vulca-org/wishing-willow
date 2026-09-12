@@ -1,0 +1,41 @@
+{
+  "note": "一轮进行中插进来的后台任务通知不是一轮新对话。2026-09-12 实证（会话 14980303）：17:53:34 用户那一轮进行中，17:56 与 17:59 两条 <task-notification> 走了提交钩子，状态被整个覆盖成通知——整轮结束时日志记下的是通知，用户的原话和 17:53:40 已写好的声明一起丢了。",
+  "session_id": "test-sess-18",
+  "steps": [
+    {
+      "append": "transcript.pre.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-user.json",
+      "stdout": "inject"
+    },
+    {
+      "append": "transcript.part1.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-envelope.json",
+      "stdout": "empty"
+    },
+    {
+      "append": "transcript.part2.jsonl"
+    },
+    {
+      "hook": "extract",
+      "input": "stop.json"
+    }
+  ],
+  "state_file": {
+    "origin": "user",
+    "decode": "逐个文件找吞掉错误的路径，只列不改。",
+    "tag": "列静默失败",
+    "prompt_startswith": "把这个目录整个扫一遍"
+  },
+  "log_lines": 1,
+  "log_last": {
+    "prompt": "把这个目录整个扫一遍，列出会静默失败的地方，先不要改。",
+    "decode": "逐个文件找吞掉错误的路径，只列不改。",
+    "interrupted": false
+  }
+}

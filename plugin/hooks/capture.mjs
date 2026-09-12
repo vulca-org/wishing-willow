@@ -7,7 +7,8 @@
 
 import { statSync } from 'node:fs';
 import {
-  SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, isSystemEnvelope, quietExit,
+  SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, isSystemEnvelope,
+  appendTurnLog, findDeclaration, quietExit,
 } from './_willow.mjs';
 
 /**
@@ -61,6 +62,33 @@ try {
   const origin = prompt === null ? null : (isSystemEnvelope(prompt) ? 'system' : 'user');
 
   const prev = readState(sessionId);
+
+  // 上一轮还没结束（Stop 还没写下 turnEndedAt）而且是用户发起的。
+  const inFlight = !!prev && prev.turnEndedAt === null && prev.origin === 'user';
+
+  // 进行中插进来的系统信封不是一轮新对话，不许覆盖用户那一轮。
+  // 2026-09-12 实证：两条 <task-notification> 覆盖了进行中的一轮，原话和声明一起丢了。
+  if (origin === 'system' && inFlight) quietExit();
+
+  // 上一轮没结束就来了新的用户消息 = 上一轮被打断了（被打断不触发 Stop）。
+  // 覆盖之前先把它记进日志，并从 transcript 补回已经写出的声明——否则永远丢失。
+  // 只在这种少见情形下多做一次提取（约几十毫秒），平常的回车不受影响。
+  if (origin === 'user' && inFlight) {
+    const found = findDeclaration({ transcript_path: input.transcript_path }, prev);
+    appendTurnLog(sessionId, {
+      turnId: prev.turnId ?? null,
+      at: prev.updatedAt ?? null,
+      endedAt: null,
+      interrupted: true,
+      reminded: prev.reminded ?? null,
+      promptField: prev.promptField ?? null,
+      origin: prev.origin ?? null,
+      prompt: prev.prompt ?? null,
+      decode: found?.decode ?? null,
+      tag: found?.tag ?? null,
+    });
+  }
+
   writeState(sessionId, {
     schema: SCHEMA,
     sessionId,

@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "transcript_path": "<STATE_DIR>/transcript.jsonl",
+  "session_id": "test-sess-18",
+  "prompt_id": "p18b",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "<task-notification>\n<task-id>aaf3c</task-id>\n<status>completed</status>\n</task-notification>"
+}
