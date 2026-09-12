@@ -40,6 +40,13 @@ struct TurnView: View {
                     detail: "插件是在这一轮中间装上的，下一轮开始记录。",
                     tint: .secondary
                 )
+            case .notAsked:
+                banner(
+                    icon: "text.bubble",
+                    title: "这一轮没问",
+                    detail: "太短或是系统消息，插件没有注入提醒 —— 不是模型没说话。",
+                    tint: .secondary
+                )
             }
 
             meta

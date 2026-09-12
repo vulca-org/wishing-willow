@@ -20,6 +20,8 @@ enum Main {
         // cacheDisplay 拍不到玻璃与外观，只有真的摆在屏幕上才是用户看到的样子。
         if let i = args.firstIndex(of: "--present") {
             PresentDemo.seconds = i + 1 < args.count ? (Double(args[i + 1]) ?? 6) : 6
+            // --real：用本机真实状态而不是样例。截图只留在本地，不进公开仓。
+            PresentDemo.real = args.contains("--real")
         }
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -31,11 +33,12 @@ enum Main {
 
 enum PresentDemo {
     nonisolated(unsafe) static var seconds: Double? = nil
+    nonisolated(unsafe) static var real = false
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let store = PresentDemo.seconds == nil
+    private let store = (PresentDemo.seconds == nil || PresentDemo.real)
         ? WillowStore()
         : WillowStore(directory: SelfShot.fixtureDirectoryForDemo())
     private var island: IslandController?

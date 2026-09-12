@@ -55,6 +55,18 @@ struct RecordTests {
         #expect(SessionState(record: r, now: .now).tag == nil)
     }
 
+    @Test("reminded=false 且无声明 → 这一轮没问，不是「问了没答」")
+    func notAsked() throws {
+        let skipped = try decode(#"{"schema":5,"sessionId":"a","prompt":"好的 继续吧","promptField":"prompt","reminded":false,"decode":null}"#)
+        #expect(SessionState(record: skipped, now: .now).declaration == .notAsked)
+
+        let asked = try decode(#"{"schema":5,"sessionId":"b","prompt":"一句够长需要提醒的请求","promptField":"prompt","reminded":true,"decode":null}"#)
+        #expect(SessionState(record: asked, now: .now).declaration == .undeclared)
+
+        let legacy = try decode(#"{"schema":2,"sessionId":"c","prompt":"旧记录没有 reminded 这一位","promptField":"prompt","decode":null}"#)
+        #expect(SessionState(record: legacy, now: .now).declaration == .undeclared)
+    }
+
     @Test("空白的 decode 等于没有 decode")
     func blankDecode() throws {
         let r = try decode(#"{"schema":2,"sessionId":"a","prompt":"x 这是一句够长的请求","promptField":"prompt","decode":"   "}"#)

@@ -65,10 +65,12 @@ struct IslandView: View {
 
             // 右翼：≤6 字标签，刚好放得下。
             HStack(spacing: 0) {
-                if let f = focus, let t = FocusRule.label(f, seen) {
-                    Text(t)
+                if let f = focus, let l = FocusRule.label(f, seen, store) {
+                    Text(l.text)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(f.declaration == .unreadable ? Color.red : Color.white)
+                        // 沿用上一轮的标签调暗：它说的是这个会话在做什么，不是这一轮读成了什么。
+                        .foregroundStyle(f.declaration == .unreadable ? Color.red
+                                         : Color.white.opacity(l.carried ? 0.55 : 1))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -134,6 +136,8 @@ struct IslandView: View {
             row("我读成了", "读不到本轮输入 —— 插件坏了，不是模型没说话", .red)
         case .awaiting:
             row("我读成了", "等这一轮开始", Color.white.opacity(0.5))
+        case .notAsked:
+            row("我读成了", "这一轮没问（太短或是系统消息）", Color.white.opacity(0.5))
         }
     }
 

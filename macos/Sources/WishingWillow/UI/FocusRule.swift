@@ -22,10 +22,25 @@ enum FocusRule {
 
     static func others(_ store: WillowStore) -> Int { max(0, live(store).count - 1) }
 
+    struct Label { let text: String; let carried: Bool }
+
     /// 只在有话说的时候占宽度。
-    static func label(_ s: SessionState, _ seen: SeenStore) -> String? {
-        if s.declaration == .unreadable { return "读不到输入" }
+    ///
+    /// 这一轮没问（「好的 继续吧」）时，本轮没有标签，但任务通常还是上一轮那个。
+    /// 用该会话**上一个真实写下的标签**，并标记为沿用，读方把它调暗 ——
+    /// 不能把上一轮的解码冒充成这一轮的，也不该退回一个被截断的工作区名。
+    static func label(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Label? {
+        if s.declaration == .unreadable { return Label(text: "读不到输入", carried: false) }
         guard seen.isUnread(s) else { return nil }
-        return s.tag ?? s.workspace
+        if let t = s.tag { return Label(text: t, carried: false) }
+        if s.declaration == .notAsked, let t = lastLoggedTag(s, store) {
+            return Label(text: t, carried: true)
+        }
+        return Label(text: s.workspace, carried: false)
+    }
+
+    static func lastLoggedTag(_ s: SessionState, _ store: WillowStore) -> String? {
+        TurnLog.read(sessionId: s.id, directory: store.directory)
+            .last { ($0.tag ?? "").isEmpty == false }?.tag
     }
 }

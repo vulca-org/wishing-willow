@@ -40,7 +40,7 @@ struct CompactLabel: View {
         .fixedSize()
     }
 
-    private func label(for s: SessionState) -> String? { FocusRule.label(s, seen) }
+    private func label(for s: SessionState) -> String? { FocusRule.label(s, seen, store)?.text }
 
     private func tint(_ s: SessionState) -> Color {
         if s.declaration == .unreadable { return .red }

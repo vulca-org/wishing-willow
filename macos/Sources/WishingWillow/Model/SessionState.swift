@@ -12,6 +12,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
         case undeclared         // 有原话，模型没写声明 —— 这一态是产品的全部意义
         case unreadable         // hook 读不到本轮输入 —— 插件坏了，不是模型没说话
         case awaiting           // 还没有本轮原话（装插件时正好在一轮中间）
+        case notAsked           // 这一轮压根没问（太短或是系统消息）—— 不是模型没说话
     }
 
     var id: String { record.sessionId }
@@ -41,6 +42,9 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if let d = record.decode, !d.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .declared(d)
         }
+        // 「没问」和「问了没答」必须分开：把「好的 继续吧」报成「问了，模型没写声明」
+        // 是一次假警报，而会被学会忽略的警报等于没有。旧记录没有这一位，保持原判。
+        if record.reminded == false { return .notAsked }
         return .undeclared
     }
 
