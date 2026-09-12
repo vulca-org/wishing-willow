@@ -1,0 +1,10 @@
+{
+  "session_id": "test-sess-02",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "transcript_path": "/tmp/fake/transcript.jsonl",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "user_prompt": "给我解释一下这个架构里权限不对称那一条是什么意思，不要动任何文件。",
+  "prompt_start_time": "2026-09-12T10:00:00Z"
+}

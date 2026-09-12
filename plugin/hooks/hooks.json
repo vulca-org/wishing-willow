@@ -1,0 +1,29 @@
+{
+  "description": "Wishing-Willow: capture the verbatim prompt, extract the model's decode line.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/capture.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/extract.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

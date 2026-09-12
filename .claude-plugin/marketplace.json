@@ -1,0 +1,15 @@
+{
+  "name": "wishing-willow",
+  "description": "Surface what the model thinks you asked, next to what you actually said.",
+  "owner": { "name": "vulca-org", "url": "https://github.com/vulca-org" },
+  "plugins": [
+    {
+      "name": "willow",
+      "source": "./plugin",
+      "description": "Shows the model's decoding of your request next to your verbatim prompt. No scoring, no blocking, nothing leaves your machine.",
+      "category": "productivity",
+      "license": "MIT",
+      "keywords": ["alignment", "intent", "drift", "statusline", "hooks"]
+    }
+  ]
+}

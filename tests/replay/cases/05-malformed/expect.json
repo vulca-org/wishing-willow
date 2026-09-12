@@ -1,0 +1,5 @@
+{
+  "note": "R1：畸形 stdin 绝不能挡住用户。必须 exit 0、无输出、不写状态文件",
+  "capture": { "exit_code": 0, "stdout": "empty" },
+  "state_file": null
+}

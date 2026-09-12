@@ -1,0 +1,10 @@
+{
+  "session_id": "test-sess-04",
+  "prompt_id": "00000000-0000-4000-8000-000000000004",
+  "transcript_path": "/tmp/fake/transcript.jsonl",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "user_prompt": "/status",
+  "prompt_start_time": "2026-09-12T10:06:00Z"
+}

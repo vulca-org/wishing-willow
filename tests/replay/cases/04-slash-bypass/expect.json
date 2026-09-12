@@ -1,0 +1,5 @@
+{
+  "note": "slash 命令 → 不得注入",
+  "capture": { "exit_code": 0, "stdout": "empty" },
+  "state_file": { "decode": null, "prompt_startswith": "/status" }
+}

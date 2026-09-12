@@ -1,0 +1,5 @@
+{
+  "note": "纯执行性追问 → 不得注入，但仍要记录 prompt",
+  "capture": { "exit_code": 0, "stdout": "empty" },
+  "state_file": { "decode": null, "prompt_startswith": "好的 继续吧" }
+}

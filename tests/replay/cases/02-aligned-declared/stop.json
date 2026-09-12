@@ -1,0 +1,11 @@
+{
+  "session_id": "test-sess-02",
+  "prompt_id": "00000000-0000-4000-8000-000000000002",
+  "transcript_path": "/tmp/fake/transcript.jsonl",
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "turn_index": 3,
+  "stop_reason": "end_turn",
+  "last_assistant_message": "你批准的：解释架构里权限不对称那一条\n我读成了：解释机制含义（不动文件）\n\n---\n\n## 先说这句话在说什么\n\n它说的是谁来记录你说过的话。"
+}

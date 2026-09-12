@@ -1,0 +1,6 @@
+{
+  "note": "模型写了两行声明 → 必须提取成功",
+  "capture": { "exit_code": 0, "stdout": "inject" },
+  "extract": { "exit_code": 0 },
+  "state_file": { "decode": "解释机制含义（不动文件）", "prompt_startswith": "给我解释一下这个架构" }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "willow",
+  "version": "0.1.0",
+  "description": "Shows how the model decoded your request, next to your verbatim prompt. It never judges whether they agree — you do.",
+  "author": { "name": "vulca-org" },
+  "homepage": "https://github.com/vulca-org/wishing-willow",
+  "repository": "https://github.com/vulca-org/wishing-willow",
+  "license": "MIT",
+  "keywords": ["alignment", "intent", "drift"]
+}
