@@ -60,7 +60,8 @@ final class IslandController {
         store.onDeclarationArrived = { [weak self] _ in self?.flash() }
         store.onReload = { [weak self] in self?.layout(animated: true) }
         store.start()
-        layout(animated: false)
+        state.shapeSize = targetShapeSize(expanded: false)
+        placeStage(state.shapeSize)
         panel.orderFrontRegardless()
 
         NotificationCenter.default.addObserver(
@@ -87,32 +88,53 @@ final class IslandController {
         return (f.midX, 156, 28)
     }
 
-    private func layout(animated: Bool) {
+    /// 形状的目标尺寸：展开 480 × 内容高；收起时有话说才长出两翼，否则缩回刘海宽。
+    private func targetShapeSize(expanded: Bool) -> CGSize {
+        let g = notchGeometry()
+        if expanded { return CGSize(width: Self.expandedWidth, height: expandedHeight()) }
+        let wings = FocusRule.focus(store, seen).flatMap { FocusRule.label($0, seen, store) } != nil
+        return CGSize(width: g.width + (wings ? Self.wing * 2 : 0), height: g.height)
+    }
+
+    /// 把舞台（窗口）瞬间放到这个尺寸，贴着刘海居中。舞台透明，不画任何东西。
+    private func placeStage(_ size: CGSize) {
         guard let s = screen() else { return }
         let g = notchGeometry()
-        // 两翼只在有话说的时候长出来；看过了、空闲、没问——缩回刘海，不遮任何东西。
-        let wings = FocusRule.focus(store, seen).flatMap { FocusRule.label($0, seen, store) } != nil
-        let size = state.expanded
-            ? CGSize(width: Self.expandedWidth, height: expandedHeight())
-            : CGSize(width: g.width + (wings ? Self.wing * 2 : 0), height: g.height)
-        // 让路：挂到刘海下方 6pt，不和别的刘海 app 抢同一块矩形。
-        let drop: CGFloat = yielding ? g.height + 6 : 0
+        let drop: CGFloat = yielding ? g.height + 6 : 0      // 让路：挂到刘海下方
         let rect = NSRect(x: g.midX - size.width / 2,
                           y: s.frame.maxY - drop - size.height,
                           width: size.width, height: size.height)
-        // 每次扫描都会走到这里（约 5 秒一次），尺寸没变就别动，免得它一直在闪。
-        if abs(panel.frame.width - rect.width) < 0.5, abs(panel.frame.height - rect.height) < 0.5,
-           abs(panel.frame.minX - rect.minX) < 0.5, abs(panel.frame.minY - rect.minY) < 0.5 { return }
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.34
-                // 带一点过冲的缓动（控制点 y 超过 1），接近灵动岛的收放。
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 1.18, 0.32, 1.0)
-                panel.animator().setFrame(rect, display: true)
-            }
-        } else {
-            panel.setFrame(rect, display: true)
+        let f = panel.frame
+        if abs(f.minX - rect.minX) < 0.5, abs(f.minY - rect.minY) < 0.5,
+           abs(f.width - rect.width) < 0.5, abs(f.height - rect.height) < 0.5 { return }
+        panel.setFrame(rect, display: true)
+    }
+
+    private var stageShrink: DispatchWorkItem?
+
+    /// 形状变到 target：舞台先撑到「现在与目标的较大者」，形状 spring 过去；
+    /// 若是变小，等动画结束再把舞台缩回，否则形状会被窗口边裁掉。
+    private func morph(to target: CGSize, animated: Bool, spring: Animation) {
+        stageShrink?.cancel()
+        guard animated else {
+            state.shapeSize = target
+            placeStage(target)
+            return
         }
+        let now = state.shapeSize
+        placeStage(CGSize(width: max(now.width, target.width), height: max(now.height, target.height)))
+        withAnimation(spring) { state.shapeSize = target }
+        if target.width < now.width || target.height < now.height {
+            let work = DispatchWorkItem { [weak self] in self?.placeStage(target) }
+            stageShrink = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        }
+    }
+
+    private func layout(animated: Bool) {
+        let target = targetShapeSize(expanded: state.expanded)
+        if state.shapeSize == target && animated { return }
+        morph(to: target, animated: animated, spring: .spring(response: 0.38, dampingFraction: 0.8))
     }
 
     /// 按内容量出展开高度，上下限兜住极端情况。
@@ -163,11 +185,14 @@ final class IslandController {
 
     private func setExpanded(_ on: Bool, reason: String) {
         guard state.expanded != on else { return }
-        state.expanded = on
-        // 演示模式下把每次展开/收回的原因打到 stderr —— 真实截图里「该展开的时候是收起的」，
-        // 不记原因就只能猜是谁收的。
+        // 每次展开/收回都记原因 —— 真实截图里「该展开的时候是收起的」，不记原因就只能猜。
         demoLog("expanded=\(on) reason=\(reason)")
-        layout(animated: true)
+        let target = targetShapeSize(expanded: on)
+        withAnimation(.spring(response: on ? 0.42 : 0.34, dampingFraction: on ? 0.7 : 0.86)) {
+            state.expanded = on
+        }
+        morph(to: target, animated: true,
+              spring: .spring(response: on ? 0.42 : 0.34, dampingFraction: on ? 0.7 : 0.86))
     }
 
     private func openDetail() {

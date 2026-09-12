@@ -4,6 +4,9 @@ import SwiftUI
 @Observable
 final class IslandState {
     var expanded = false
+    /// 黑色形状此刻该有的尺寸。窗口只是舞台（瞬间定大小、透明），形状在舞台里用 spring 变化。
+    /// 起因：录屏逐帧测过，NSPanel 的窗口尺寸动画根本没发生——宽度一步从 340 跳到 480，没有任何中间值。
+    var shapeSize: CGSize = .zero
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、下方两角圆，和刘海连成一块。
@@ -25,26 +28,35 @@ struct IslandView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            UnevenRoundedRectangle(
+            ZStack(alignment: .top) {
+                UnevenRoundedRectangle(
+                    bottomLeadingRadius: state.expanded ? 20 : 10,
+                    bottomTrailingRadius: state.expanded ? 20 : 10
+                )
+                // 两翼缩回刘海时整块不画：物理刘海本身是黑的，再画一层只会在圆角处漏出一两个像素。
+                .fill(Color.black.opacity(state.expanded || wingLabel != nil ? 1 : 0))
+
+                if state.expanded {
+                    // 内容固定宽度，形状长大时被裁切着逐渐露出——不在长大过程中反复换行。
+                    IslandExpandedContent(store: store, seen: seen)
+                        .frame(width: IslandController.expandedWidth, alignment: .topLeading)
+                        .transition(.opacity)
+                } else if let f = focus, let l = wingLabel {
+                    compact(f, l)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: state.shapeSize.width, height: state.shapeSize.height, alignment: .top)
+            .clipShape(UnevenRoundedRectangle(
                 bottomLeadingRadius: state.expanded ? 20 : 10,
                 bottomTrailingRadius: state.expanded ? 20 : 10
-            )
-            // 两翼缩回刘海时整块不画：物理刘海本身是黑的，再画一层只会在圆角处漏出一两个像素。
-            .fill(Color.black.opacity(state.expanded || wingLabel != nil ? 1 : 0))
-
-            if state.expanded {
-                IslandExpandedContent(store: store, seen: seen)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            } else if let f = focus, let l = wingLabel {
-                compact(f, l)
-                    .transition(.opacity)
-            }
+            ))
+            // 悬停与点击只挂在形状上：舞台在过渡期间比形状大，那片透明边缘不该触发任何事。
+            .contentShape(Rectangle())
+            .onHover(perform: onHover)
+            .onTapGesture(perform: onClick)
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.expanded)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .onHover(perform: onHover)
-        .onTapGesture(perform: onClick)
         .environment(\.colorScheme, .dark)
     }
 
