@@ -67,6 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
                     if CommandLine.arguments.contains("--detail") {
                         c.presentDetail()
+                    } else if CommandLine.arguments.contains("--flash") {
+                        // --flash：像写出理解那一刻一样主动弹出精简版；加 --flash-hover 时 2 秒后模拟鼠标停上去，长成完整面板。
+                        c.presentFlash()
+                        if CommandLine.arguments.contains("--flash-hover") {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { c.presentHover(true) }
+                        }
                     } else if !CommandLine.arguments.contains("--pill-cycle") && !CommandLine.arguments.contains("--hover-cycle")
                                 && !CommandLine.arguments.contains("--dodge-cycle") {
                         c.presentExpanded()

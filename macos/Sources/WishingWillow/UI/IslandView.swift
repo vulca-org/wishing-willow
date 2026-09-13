@@ -36,6 +36,10 @@ final class IslandState {
     var expandedFloor: CGFloat = 0
     /// 形状最近一次变形的目标高度。翻页行按它钉在底边，不跟高度动画走。
     var layoutHeight: CGFloat = 0
+    /// 主动弹出（写出理解、等你选择）用的精简版：只放要求与理解两行。鼠标停上去就长成完整面板。
+    var compact = false
+    /// 完整悬停面板按内容本身量出来的高度（不含翻页后保持的那部分）。
+    var naturalHeight: CGFloat = 0
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、顶部两角凹肩、下方两角圆，和刘海连成一块。
@@ -101,6 +105,13 @@ struct IslandView: View {
                                focus: state.detailFocus)
                         .frame(width: DetailView.size.width - 2 * NotchShape.open.top,
                                height: DetailView.size.height, alignment: .top)
+                        .transition(Self.quickOut)
+                } else if state.expanded && state.compact {
+                    // 主动弹出的精简版：先前弹出的就是完整面板，最高 470pt，用户说「占掉的屏幕太大了」（2026-09-13）。
+                    IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
+                                          notchWidth: notchWidth, notchHeight: notchHeight, part: .compact)
+                        .frame(width: IslandController.compactWidth, alignment: .topLeading)
+                        .fixedSize(horizontal: false, vertical: true)
                         .transition(Self.quickOut)
                 } else if state.expanded {
                     // 内容按完整高度排版，形状长大时被裁切着逐渐露出——不在长大途中被压扁、重排。
@@ -412,7 +423,8 @@ struct IslandExpandedContent: View {
     var onSwitch: ((String) -> Void)? = nil
     /// 画哪一部分。悬停面板把翻页那一行单独钉在面板底边（见 IslandView），其余从顶上排；量高度用完整的一份。
     /// 三份的几何一致：面板正好是完整高度时，拆开画和合在一起画每个像素都在同一个位置。
-    enum Part { case full, body, flipRow }
+    /// compact：主动弹出的精简版，只放刘海两侧那一行加要求、理解两行（等你选择时放题面）。
+    enum Part { case full, body, flipRow, compact }
     var part: Part = .full
 
     @State private var shown = Offscreen.isRendering
@@ -420,19 +432,34 @@ struct IslandExpandedContent: View {
     var body: some View {
         let pair = FocusRule.pair(store, seen, pinned: pinned)
         Group {
-            if part == .flipRow {
+            if part == .compact {
+                VStack(alignment: .leading, spacing: 0) {
+                    ears(pair.primary).reveal(0, shown)
+                    if let s = pair.primary {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(Self.compactLines(s, store: store).enumerated()), id: \.offset) { i, line in
+                                compactLine(line).reveal(i + 1, shown)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.top, 2)
+                        .padding(.bottom, 12)
+                    }
+                }
+            } else if part == .flipRow {
                 if let s = pair.primary, let other = FocusRule.flipTarget(store, after: s) {
                     otherRow(s, other, FocusRule.pill(other, seen, store))
                         .reveal(5, shown)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     ears(pair.primary).reveal(0, shown)
                     if let s = pair.primary {
                         let tl = store.timeline(for: s)
-                        VStack(alignment: .leading, spacing: 12) {
+                        // 收紧留白（用户 2026-09-13：「为了排版空隙太多了，内容不够紧凑」）：段距 12→8、四周 16→14、上 4→2、下 16→12。
+                        VStack(alignment: .leading, spacing: 8) {
                             request(s, tl).reveal(1, shown)
                             reading(s, tl).reveal(2, shown)
                             if let tl { working(tl, asked: s.record.reminded != false).reveal(3, shown) }
@@ -441,9 +468,9 @@ struct IslandExpandedContent: View {
                                 otherRow(s, other, FocusRule.pill(other, seen, store)).reveal(5, shown)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
-                        .padding(.bottom, 16)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 2)
+                        .padding(.bottom, 12)
                     } else {
                         Text(L("没有活动的会话", "No active sessions"))
                             .font(.system(size: 13))
@@ -540,7 +567,7 @@ struct IslandExpandedContent: View {
         let start = tl?.startedAt ?? (s.declaration == .inProgress ? s.record.updatedAt : nil)
         let value = [start.map(Self.clock), system ? nil : s.prompt.map { L("\($0.count) 字", "\($0.count) chars") }]
             .compactMap { $0 }.joined(separator: " · ")
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 2) {
             SectionHeader(title: system ? L("这一轮", "This turn") : L("你的要求", "Your request"), value: value.isEmpty ? nil : value)
             // 不是人说的话，不能挂在「你的要求」下面。
             para(system ? L("系统消息（\(PromptSource.describe(s.prompt))），不是你说的", "System message (\(PromptSource.describe(s.prompt))) — not from you") : (s.prompt.map(Self.oneLine) ?? "—"),
@@ -554,7 +581,7 @@ struct IslandExpandedContent: View {
     @ViewBuilder
     private func reading(_ s: SessionState, _ tl: TurnTimeline?) -> some View {
         let p = store.progress(for: s)
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             switch s.declaration {
             case .declared(let d):
                 SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: declaredNote(s, tl),
@@ -632,7 +659,7 @@ struct IslandExpandedContent: View {
         let live = tl.endedAt == nil && p.interruptedAt == nil
         var value = [L("\(p.steps.count) 步", "\(p.steps.count) steps")]
         if let first = p.firstWriteAt { value.append(L("首次落盘 +", "first write +") + Clock.text(first.timeIntervalSince(tl.startedAt))) }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 5) {
             SectionHeader(title: live ? L("Claude 在做", "Claude is working") : L("Claude 做了", "What Claude did"), value: value.joined(separator: " · "))
             if live, let c = p.pendingChoice {
                 ChoiceCard(choice: c).transition(.opacity)
@@ -712,7 +739,7 @@ struct IslandExpandedContent: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Ink.tertiary)
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, 10).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Ink.fill))
             .contentShape(Rectangle())
         }
@@ -721,6 +748,58 @@ struct IslandExpandedContent: View {
 
     // MARK: 小件
 
+    /// 精简版的一行：左边两个字的小标签，右边正文。
+    struct CompactLine: Equatable {
+        enum Tone: Equatable { case primary, secondary, warning, accent, quiet }
+        let label: String
+        let text: String
+        let tone: Tone
+        let lines: Int
+    }
+
+    /// 主动弹出时放什么。等你选择：题面（最多两行）加一行「回 Claude Code 里作答」；
+    /// 否则：你的要求一行、Claude 的理解最多两行（标了 ⚠ 用橙色，还没写出就说还没写出）。进度、步骤、数据条、翻页都不放。
+    static func compactLines(_ s: SessionState, store: WillowStore) -> [CompactLine] {
+        let p = store.progress(for: s)
+        if let c = p?.pendingChoice {
+            let ask = [c.question, c.header].compactMap { $0 }.first { !$0.isEmpty } ?? L("Claude 在等你选择", "Claude is waiting for your choice")
+            return [CompactLine(label: c.kind == .plan ? L("批准", "Approve") : L("等你", "Your turn"), text: oneLine(ask), tone: .accent, lines: 2),
+                    CompactLine(label: "", text: L("回 Claude Code 里作答", "Answer it in Claude Code"), tone: .quiet, lines: 1)]
+        }
+        let asked = s.record.isSystemMessage ? L("系统消息，不是你说的", "System message — not from you") : (s.prompt.map(oneLine) ?? "—")
+        var read: String? = p?.decode
+        if case .declared(let d) = s.declaration { read = d }
+        let line2: CompactLine
+        if let read {
+            line2 = CompactLine(label: L("理解", "Read as"), text: oneLine(read), tone: read.hasPrefix("⚠") ? .warning : .primary, lines: 2)
+        } else {
+            line2 = CompactLine(label: L("理解", "Read as"), text: L("还没写出", "Not written yet"), tone: .quiet, lines: 1)
+        }
+        return [CompactLine(label: L("要求", "Asked"), text: asked, tone: .secondary, lines: 1), line2]
+    }
+
+    private func compactLine(_ line: CompactLine) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(line.label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Ink.tertiary)
+                .frame(width: Lang.current == .zh ? 26 : 50, alignment: .leading)
+            Text(line.text)
+                .font(.system(size: line.tone == .quiet ? 11 : 13, weight: line.tone == .primary || line.tone == .warning ? .medium : .regular))
+                .foregroundStyle({
+                    switch line.tone {
+                    case .primary: return Ink.primary
+                    case .secondary: return Ink.secondary
+                    case .warning: return Color.orange
+                    case .accent: return ChoiceCard.accent
+                    case .quiet: return Ink.tertiary
+                    }
+                }())
+                .lineLimit(line.lines)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     /// 只放两行的原话：换行压成空格。带换行的要求先前第一行后面空一行、正文被挤掉（2026-09-13 实拍）。
     static func oneLine(_ s: String) -> String {
         s.replacingOccurrences(of: "\\s*\\n+\\s*", with: " ", options: .regularExpression)
@@ -728,7 +807,7 @@ struct IslandExpandedContent: View {
 
     private func para(_ text: String, _ color: Color) -> some View {
         Text(text)
-            .font(.system(size: 13.5))
+            .font(.system(size: 13))
             .foregroundStyle(color)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -757,7 +836,7 @@ struct StepList: View {
         let recent = Array(steps.suffix(limit))
         let first = steps.count - recent.count
         let live = timeline.endedAt == nil && timeline.progress.interruptedAt == nil
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             // 每一步用它在整轮步骤数组里的下标当身份（步骤只追加、不删）。
             // 先前用可见行号：新步骤到达时同一行的文字原地交叉淡变，录屏里「Find retry」和「Run upload tests」叠在一起（2026-09-13 动图帧对照）。
             ForEach(first..<steps.count, id: \.self) { k in

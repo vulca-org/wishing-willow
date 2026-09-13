@@ -109,6 +109,25 @@ struct MidTurnAndDodgeTests {
         #expect(FocusRule.parallel(store).idle == 1)
     }
 
+    @Test("主动弹出的精简版只放两行：要求一行、理解最多两行；标 ⚠ 用橙色；原话换行压成空格；还没写出就说还没写出")
+    func compactFlashLines() throws {
+        let d = try dir()
+        try write(record(["prompt": "把目录下的脚本\n都过一遍", "decode": "⚠ 先改代码再说", "tag": "改脚本"], id: "flag"), "flag.json", in: d)
+        try write(record(["decode": NSNull(), "turnEndedAt": NSNull()], id: "open"), "open.json", in: d)
+        let store = WillowStore(directory: d)
+        store.reload()
+        let flag = try #require(store.sessions.first { $0.id == "flag" })
+        let lines = IslandExpandedContent.compactLines(flag, store: store)
+        #expect(lines.count == 2)
+        #expect(lines[0] == .init(label: "要求", text: "把目录下的脚本 都过一遍", tone: .secondary, lines: 1))
+        #expect(lines[1] == .init(label: "理解", text: "⚠ 先改代码再说", tone: .warning, lines: 2))
+        let open = try #require(store.sessions.first { $0.id == "open" })
+        let openLines = IslandExpandedContent.compactLines(open, store: store)
+        #expect(openLines.count == 2)
+        #expect(openLines[1].text == "还没写出")
+        #expect(IslandController.compactWidth < IslandController.expandedWidth)
+    }
+
     @Test("菜单栏让路·开始：鼠标在带子里、不在灵动岛上才去查菜单栏；菜单栏窗口出现（正在滑出或已出来）才让；展开或缩回刘海不查")
     func dodgeStart() {
         let band = DodgeRule.band(screen: CGRect(x: 0, y: 0, width: 1280, height: 832), height: 28)

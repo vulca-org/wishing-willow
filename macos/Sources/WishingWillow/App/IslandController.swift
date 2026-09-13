@@ -56,6 +56,8 @@ final class IslandController {
     static let wingMax: CGFloat = 124
     static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 72pt 算
     static let expandedWidth: CGFloat = 500     // 内容宽；形状再加两侧凹肩
+    /// 主动弹出的精简版的内容宽。刘海 156 两侧各留约 142，放得下工作区与状态、标签与阶段。
+    static let compactWidth: CGFloat = 440
     static let maxExpandedHeight: CGFloat = 470
     static let pillHeight: CGFloat = 24
     /// 胶囊中心的纵坐标（相对岛顶）。平时在刘海高度里居中；让路时尺寸不变，顶边和主体顶边对齐，一起贴住菜单栏底边。
@@ -163,8 +165,13 @@ final class IslandController {
     private func targetShapeSize(expanded: Bool) -> CGSize {
         if state.detail { return DetailView.size }
         let g = notchGeometry()
+        if expanded && state.compact {
+            return CGSize(width: Self.compactWidth + 2 * NotchShape.open.top, height: compactHeight())
+        }
         if expanded {
-            return CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: max(expandedHeight(), state.expandedFloor))
+            let natural = expandedHeight()
+            state.naturalHeight = natural
+            return CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: max(natural, state.expandedFloor))
         }
         let primary = FocusRule.pair(store, seen, pinned: state.pinned).primary
         let label = primary.flatMap { FocusRule.label($0, seen, store) }
@@ -315,6 +322,17 @@ final class IslandController {
         updatePill(animated: animated)
     }
 
+    /// 精简版按内容量高度：通常是刘海一行加两三行字。
+    private func compactHeight() -> CGFloat {
+        let g = notchGeometry()
+        let probe = NSHostingController(rootView:
+            IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
+                                  notchWidth: g.width, notchHeight: g.height, part: .compact)
+                .frame(width: Self.compactWidth))
+        let fit = probe.sizeThatFits(in: CGSize(width: Self.compactWidth, height: 10_000))
+        return max(72, min(200, ceil(fit.height)))
+    }
+
     /// 按内容量出展开高度，上下限兜住极端情况。
     private func expandedHeight(expanded: Bool = true) -> CGFloat {
         let g = notchGeometry()
@@ -360,7 +378,8 @@ final class IslandController {
                     self.state.pinned = f.id
                     self.seen.markSeen(f)
                 }
-                self.setExpanded(true, reason: "hover-in")
+                if self.state.expanded && self.state.compact { self.promoteCompact() }
+                else { self.setExpanded(true, reason: "hover-in") }
             }
             hoverIntent = work
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverDelay, execute: work)
@@ -406,12 +425,14 @@ final class IslandController {
     }
 
     /// 静止展开 6 秒。不算已读 —— 面板在屏幕顶上出现，不是任何人看过的证据。
+    /// 没展开时弹精简版（只放要求与理解）；你正悬停看着完整面板时，不把它缩成精简版。
     private func flash(pinning id: String, reason: String = "declaration-arrived") {
         if state.detail { return }
         state.pinned = id
         if state.expanded {
             morph(to: targetShapeSize(expanded: true), .move)
         } else {
+            state.compact = true
             setExpanded(true, reason: reason)
         }
         autoCollapse?.invalidate()
@@ -430,6 +451,19 @@ final class IslandController {
         guard state.expanded, !state.detail else { return }
         guard force || shapeScreenRect().insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
         state.expandedFloor = max(state.expandedFloor, state.shapeHeight)
+    }
+
+    /// 翻页后面板保持的高度，鼠标一回到内容范围、离开底部翻页那一带，就缩回内容本身的高度：
+    /// 空着的那块黑色只在「连着点翻页」时留着（用户 2026-09-13：「为了排版空隙太多了」）。
+    /// 鼠标还在空白处或翻页行上不缩——一缩它就落到面板外，面板会整个收起。
+    private func releaseExpandedFloor() {
+        guard state.expanded, !state.detail, !state.compact, state.naturalHeight > 0,
+              state.expandedFloor > state.naturalHeight + 1 else { return }
+        let rect = shapeScreenRect()
+        let p = NSEvent.mouseLocation
+        guard rect.contains(p), rect.maxY - p.y < state.naturalHeight - 12 else { return }
+        state.expandedFloor = 0
+        morph(to: targetShapeSize(expanded: true), .move)
     }
 
     /// 底部那一行或胶囊：切到那个会话并展开。这是你主动点的，算看过。
@@ -462,9 +496,20 @@ final class IslandController {
         }
     }
 
+    /// 精简版被鼠标停住：长成完整的悬停面板。
+    private func promoteCompact() {
+        guard state.expanded, state.compact, !state.detail else { return }
+        demoLog("compact→full")
+        state.expandedFloor = 0
+        state.pillAnchorWidth = state.shapeWidth
+        withAnimation(Self.openWidth) { state.compact = false }
+        morph(to: targetShapeSize(expanded: true), .open)
+    }
+
     private func setExpanded(_ on: Bool, reason: String) {
         guard state.expanded != on else { return }
         state.expandedFloor = 0
+        if !on { state.compact = false }
         // 每次展开/收回都记原因 —— 真实截图里「该展开的时候是收起的」，不记原因就只能猜。
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
@@ -476,8 +521,7 @@ final class IslandController {
         // 先量尺寸、再开动画。量一次要建一整棵展开态视图（实测约 30 ms）；放在动画开始之后，
         // 这段时间算进弹簧里，第一帧就跳一大截。
         let measureStart = Date()
-        let target = on ? CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: expandedHeight(expanded: true))
-                        : targetShapeSize(expanded: false)
+        let target = targetShapeSize(expanded: on)
         demoLog("measure \(Int(Date().timeIntervalSince(measureStart) * 1000))ms")
         if on { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(on ? Self.openWidth : Self.closeHeight) {
@@ -577,6 +621,7 @@ final class IslandController {
         stepDodge()
         // 演示与录素材时不跟真鼠标走，和悬停一样。
         if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { return }
+        releaseExpandedFloor()
         guard let s = screen() else { return }
         let g = notchGeometry()
         // 收起态、而且两翼或胶囊画着东西才会挡：缩回刘海时形状和物理刘海一样宽。
@@ -676,6 +721,12 @@ final class IslandController {
 
     /// 演示用：让路与复原（录下移的样子，不依赖真鼠标）。
     func presentDodge(_ on: Bool) { setDodge(on) }
+
+    /// 演示用：像写出理解那一刻一样主动弹出（精简版）。
+    func presentFlash() {
+        store.reload()
+        if let f = FocusRule.pair(store, seen, pinned: nil).primary { flash(pinning: f.id, reason: "present-flash") }
+    }
 
     /// 演示用：翻到下一个在跑的会话，等于点悬停面板底部那一行。
     func presentFlip() {

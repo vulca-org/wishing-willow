@@ -71,7 +71,7 @@ struct StatCell<Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Ink.tertiary)
@@ -87,7 +87,7 @@ struct StatCell<Accessory: View>: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -100,7 +100,7 @@ extension StatCell where Accessory == EmptyView {
 
 struct StatDivider: View {
     var body: some View {
-        Rectangle().fill(Ink.separator).frame(width: Ink.hair).padding(.vertical, 8)
+        Rectangle().fill(Ink.separator).frame(width: Ink.hair).padding(.vertical, 6)
     }
 }
 
@@ -389,7 +389,7 @@ struct TurnBar: View {
     private func content(now: Date) -> some View {
         let segs = Self.segments(timeline, now: now, asked: asked)
         let total = max(now.timeIntervalSince(timeline.startedAt), 1)
-        return VStack(alignment: .leading, spacing: 7) {
+        return VStack(alignment: .leading, spacing: 4) {
             // 高度要装下：轨道 5+8、刻度 3+5、标签 2+约 11。先前给 30，标签画到 34，下半截被裁（2026-09-13 实拍）。
             Canvas { ctx, size in draw(&ctx, size: size, segs: segs, total: total, now: now) }
                 .frame(height: 36)
