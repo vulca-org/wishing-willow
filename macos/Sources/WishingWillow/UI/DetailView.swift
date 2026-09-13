@@ -37,11 +37,12 @@ struct DetailView: View {
         let tl = current.flatMap { store.timeline(for: $0) }
         let running = current?.declaration == .inProgress ? tl?.startedAt : nil
         let status = ClaudeStatus.snapshot(tl?.progress, settingsModel: store.settingsModel)
+        let par = FocusRule.parallel(store)
         VStack(alignment: .leading, spacing: 0) {
             ears.reveal(0, shown, after: Self.revealAfter)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "会话", value: "\(sessions.count) 个 · 按最近动静")
+                    SectionHeader(title: "会话", value: "\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)")
                     sessionList.frame(height: min(CGFloat(sessions.count) * 42, 168), alignment: .top)
                     SessionChart(entries: entries, runningSince: running)
                         .frame(maxHeight: .infinity)

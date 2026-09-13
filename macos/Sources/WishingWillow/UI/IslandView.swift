@@ -56,14 +56,17 @@ struct IslandView: View {
         ZStack(alignment: .top) {
             // 胶囊画在岛的下面：收回时藏进岛里，出场时从岛的右缘滴出去。
             if state.pillWidth > 0, let other = pair.secondary, let pill = FocusRule.pill(other, seen, store) {
+                let par = FocusRule.parallel(store)
                 PillAssembly(islandWidth: state.shapeWidth, pillOut: state.pillOut,
                              pillExtra: state.pillHover ? IslandController.pillPreview : 0,
                              pillWidth: state.pillWidth, notchHeight: notchHeight,
                              bottomRadius: NotchShape.closed.bottom,
+                             layers: FocusRule.stackLayers(running: par.running),
                              onTap: { onSwitch(other.id) }, onHover: onPillHover) {
-                    SessionPill(pill: pill, extra: FocusRule.extra(store, primary: pair.primary, secondary: other),
+                    SessionPill(pill: pill,
                                 preview: state.pillHover
                                     ? (store.progress(for: other)?.tag ?? other.tag ?? FocusRule.lastLoggedTag(other, store) ?? other.workspace)
+                                      + " · 共 \(par.running) 个"
                                     : nil)
                 }
             }
@@ -122,13 +125,16 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     let pillWidth: CGFloat
     let notchHeight: CGFloat
     let bottomRadius: CGFloat
+    /// 胶囊后面叠的层数：还有几个会话在跑但没轮到显示。叠层取代先前的「+N」。
+    let layers: Int
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let content: () -> Content
 
     init(islandWidth: CGFloat, pillOut: CGFloat, pillExtra: CGFloat, pillWidth: CGFloat, notchHeight: CGFloat,
-         bottomRadius: CGFloat, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+         bottomRadius: CGFloat, layers: Int, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
          @ViewBuilder content: @escaping () -> Content) {
+        self.layers = layers
         self.islandWidth = islandWidth
         self.pillOut = pillOut
         self.pillExtra = pillExtra
@@ -173,6 +179,16 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
                         }
                     }
                     .allowsHitTesting(false)
+                }
+                // 叠层：像 iOS 叠起来的通知，后面每一层右移 5pt、矮 4pt、暗一档。远的先画。
+                ForEach(0..<layers, id: \.self) { i in
+                    let k = CGFloat(layers - i)
+                    Capsule()
+                        .fill(Color(white: 0.3 - 0.08 * k))
+                        .frame(width: w, height: max(8, h - 4 * k))
+                        .position(x: cx + 5 * k, y: cy)
+                        .opacity(Double(max(0, min(1, (pillOut - 0.6) / 0.3))))
+                        .allowsHitTesting(false)
                 }
                 content()
                     .opacity(Double(max(0, min(1, (pillOut - 0.45) / 0.4))))
@@ -279,7 +295,6 @@ struct WingStatus: View {
 /// 第二个会话的分离胶囊。平时只放一个符号加两三个字；鼠标停上去时向右长出，预览那个会话的标签。
 struct SessionPill: View {
     let pill: FocusRule.Pill
-    let extra: Int
     var preview: String? = nil
 
     var body: some View {
@@ -303,11 +318,6 @@ struct SessionPill: View {
             case .silent:
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
                 Text("没写")
-            }
-            if extra > 0 {
-                Text("+\(extra)")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.45))
             }
             if let preview {
                 Text(preview)
@@ -575,7 +585,7 @@ struct IslandExpandedContent: View {
     private func otherRow(_ s: SessionState, _ other: SessionState, _ pill: FocusRule.Pill) -> some View {
         Button { onSwitch?(other.id) } label: {
             HStack(spacing: 10) {
-                SessionPill(pill: pill, extra: 0)
+                SessionPill(pill: pill)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(Color.white.opacity(0.1)))
                 VStack(alignment: .leading, spacing: 1) {
@@ -589,9 +599,13 @@ struct IslandExpandedContent: View {
                         .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 6)
-                let more = FocusRule.extra(store, primary: s, secondary: other)
-                if more > 0 {
-                    Text("另有 \(more) 个").font(.system(size: 10.5)).foregroundStyle(Ink.tertiary)
+                // 说总数，不说「另有 N 个」：3 个并行时那句话写的是「另有 1 个」，读起来像一共只多一个。
+                let par = FocusRule.parallel(store)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("共 \(par.running) 个在跑").font(Ink.number(10.5, .medium)).foregroundStyle(Ink.secondary)
+                    if par.idle > 0 {
+                        Text("\(par.idle) 个空闲").font(Ink.number(10)).foregroundStyle(Ink.tertiary)
+                    }
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))

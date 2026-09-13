@@ -57,7 +57,24 @@ enum FocusRule {
         return (p, s)
     }
 
-    /// 主会话与胶囊之外还在跑的会话数，胶囊上写成「+N」。
+    /// 并行计数。在跑 = 最近 10 分钟有动静（灵动岛上展示的那些）；空闲 = 进程还开着、但超过 10 分钟没动静。
+    ///
+    /// 先前胶囊上写「+N」、展开态写「另有 N 个」，N 是主会话与胶囊之外的数：3 个并行时显示「+1」。
+    /// 用户读成「一共只多一个」（2026-09-13）——胶囊里那个本身就是另一个，没人这么数；
+    /// 而且开着但空闲的会话（本机当时 2 个）哪儿都不显示。改为说总数，空闲的单独说。
+    static func parallel(_ store: WillowStore) -> (running: Int, idle: Int) {
+        (live(store).count, store.sessions.filter { $0.isStale && $0.isOpen }.count)
+    }
+
+    static func parallelSummary(running: Int, idle: Int) -> String {
+        let head = running <= 1 ? "只有这一个在跑" : "共 \(running) 个会话在跑"
+        return idle > 0 ? "\(head) · \(idle) 个空闲" : head
+    }
+
+    /// 胶囊后面叠几层：主会话占两翼、胶囊是第二个，再往后还在跑的每个叠一层，最多画 2 层。
+    static func stackLayers(running: Int) -> Int { min(2, max(0, running - 2)) }
+
+    /// 主会话与胶囊之外还在跑的会话数（界面上不再直接写成「+N」）。
     static func extra(_ store: WillowStore, primary: SessionState?, secondary: SessionState?) -> Int {
         live(store).filter { $0.id != primary?.id && $0.id != secondary?.id }.count
     }

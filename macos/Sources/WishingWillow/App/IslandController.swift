@@ -54,7 +54,7 @@ final class IslandController {
     static let pillGap: CGFloat = 6
     static let pillMax: CGFloat = 96
     /// 鼠标停在胶囊上时向右长出的宽度，用来放那个会话的标签。
-    static let pillPreview: CGFloat = 84
+    static let pillPreview: CGFloat = 130     // 标签 + 「· 共 N 个」
     /// 悬停那 0.3 秒里岛先鼓起多少。
     static let hoverBump = CGSize(width: 10, height: 2)
     static let shadowPad: CGFloat = 16
@@ -157,7 +157,7 @@ final class IslandController {
         guard !state.expanded, !state.detail else { return 0 }
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
         guard let other = pair.secondary, FocusRule.pill(other, seen, store) != nil else { return 0 }
-        return 76 + (FocusRule.extra(store, primary: pair.primary, secondary: other) > 0 ? 20 : 0)
+        return 76     // 还有更多会话时在胶囊后面叠层，不再加宽写「+N」
     }
 
     /// 舞台固定大小：装得下点击面板、最高的展开态、带胶囊（含悬停预览）的收起态，外加阴影。
@@ -167,7 +167,7 @@ final class IslandController {
     private func stageSize() -> CGSize {
         let g = notchGeometry()
         let compactWithPill = g.width + Self.wing * 2 + 2 * NotchShape.closed.top + Self.hoverBump.width
-            + 2 * (Self.pillGap + Self.pillMax + Self.pillPreview)
+            + 2 * (Self.pillGap + Self.pillMax + Self.pillPreview + 10)
         let w = max(DetailView.size.width, Self.expandedWidth + 2 * NotchShape.open.top, compactWithPill) + 2 * Self.shadowPad
         let h = max(DetailView.size.height, Self.maxExpandedHeight) + Self.shadowPad
         return CGSize(width: ceil(w), height: ceil(h))

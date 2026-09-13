@@ -82,6 +82,12 @@ struct SessionState: Identifiable, Sendable, Equatable {
         return now.timeIntervalSince(updated) > Self.staleAfter
     }
 
+    /// 进程还开着、会话没结束——不管最近有没有动静。「空闲」= 开着但陈旧。
+    var isOpen: Bool {
+        guard record.endedAt == nil, let pid = record.pid else { return false }
+        return Self.processIsAlive(pid)
+    }
+
     var age: TimeInterval? {
         guard let updated = record.updatedAt else { return nil }
         return now.timeIntervalSince(updated)
