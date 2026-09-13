@@ -133,7 +133,7 @@ struct MidTurnAndDodgeTests {
         #expect(rest.contains(CGPoint(x: 4, y: 0.5)))             // 凹肩：黑色沿屏幕上沿流出去
         #expect(!rest.contains(CGPoint(x: 176, y: -5)))
 
-        let down = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, stemWidth: 156).path(in: rect)
+        let down = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, capsule: 1, stemWidth: 156).path(in: rect)
         #expect(down.boundingRect.minY <= -28)                    // 颈顶够到屏幕上沿，和刘海连着
         #expect(down.contains(CGPoint(x: 176, y: -14)))           // 颈
         #expect(down.contains(CGPoint(x: 97, y: -0.5)))           // 刘海左底角外 1pt：倒角填上，不漏亮三角
@@ -143,14 +143,42 @@ struct MidTurnAndDodgeTests {
         #expect(!down.contains(CGPoint(x: 7, y: 1)))              // 左上角是凸圆角
         #expect(down.contains(CGPoint(x: 20, y: 14)))
 
-        let midway = NotchShape(topRadius: 6, bottomRadius: 14, drop: 10, dropDepth: 28, stemWidth: 156).path(in: rect)
+        let midway = NotchShape(topRadius: 6, bottomRadius: 14, drop: 10, dropDepth: 28, capsule: 1, stemWidth: 156).path(in: rect)
         #expect(midway.boundingRect.minY <= -10)
         #expect(midway.contains(CGPoint(x: 176, y: -5)))          // 途中颈也一直连着刘海，不出现缝
 
-        let narrow = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, stemWidth: 156)
+        // 回刘海还差 1pt、顶角仍是全圆：两端不冒凹肩（先前按进度长，两只角先悬在半空再合上，用户 2026-09-13）
+        let landing = NotchShape(topRadius: 6, bottomRadius: 14, drop: 1, dropDepth: 28, capsule: 1, stemWidth: 156).path(in: rect)
+        #expect(landing.boundingRect.minX >= 6 - 0.01)
+        // 贴回上沿、顶角合上之后与原形状一致
+        let merged = NotchShape(topRadius: 6, bottomRadius: 14, drop: 0, dropDepth: 28, capsule: 0, stemWidth: 156).path(in: rect)
+        #expect(merged.contains(CGPoint(x: 4, y: 0.5)))
+
+        let narrow = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, capsule: 1, stemWidth: 156)
             .path(in: CGRect(x: 0, y: 0, width: 156, height: 28))
         #expect(narrow.contains(CGPoint(x: 78, y: 14)))
         #expect(narrow.boundingRect.width <= 156.01)
+    }
+
+    @Test("让路时右边胶囊长到和主体一样高（28pt）、顶边贴住菜单栏；不让路时 24pt")
+    func pillFlush() {
+        #expect(IslandController.dodgedPillHeight(dodge: 0, depth: 28, notchHeight: 28) == 24)
+        #expect(IslandController.dodgedPillHeight(dodge: 28, depth: 28, notchHeight: 28) == 28)
+        #expect(IslandController.dodgedPillHeight(dodge: 14, depth: 28, notchHeight: 28) == 26)
+    }
+
+    @Test("点开面板：显示灵动岛上正显示的会话，不是列表第一个；面板里点过的优先；那个会话不在了才退回第一个")
+    func detailFocus() throws {
+        let d = try dir()
+        try write(record([:], id: "a", ago: 10), "a.json", in: d)
+        try write(record([:], id: "b", ago: 300), "b.json", in: d)
+        let store = WillowStore(directory: d)
+        store.reload()
+        let first = try #require(store.sessions.first)
+        let other = try #require(store.sessions.first { $0.id != first.id })
+        #expect(DetailView.current(store.sessions, picked: nil, focus: other.id)?.id == other.id)
+        #expect(DetailView.current(store.sessions, picked: first.id, focus: other.id)?.id == first.id)
+        #expect(DetailView.current(store.sessions, picked: nil, focus: "gone")?.id == first.id)
     }
 
     @Test("菜单栏让路：让开后鼠标在带子里一直让；离开不到 0.35 秒不回；超过才回；有菜单开着不回")

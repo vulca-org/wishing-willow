@@ -55,6 +55,11 @@ final class IslandController {
     static let expandedWidth: CGFloat = 500     // 内容宽；形状再加两侧凹肩
     static let maxExpandedHeight: CGFloat = 470
     static let pillHeight: CGFloat = 24
+    /// 让路时胶囊长到和主体一样高，顶边一起贴住菜单栏底边（用户 2026-09-13：「也要贴住」）；不让路时照旧 24pt。
+    static func dodgedPillHeight(dodge: CGFloat, depth: CGFloat, notchHeight: CGFloat) -> CGFloat {
+        let p = depth > 0 ? max(0, min(1, dodge / depth)) : 0
+        return pillHeight + max(0, notchHeight - pillHeight) * p
+    }
     static let pillGap: CGFloat = 6
     static let pillMax: CGFloat = 120
     /// 鼠标停在胶囊上时向右长出的宽度，用来放那个会话的标签。
@@ -74,6 +79,9 @@ final class IslandController {
     /// 给菜单栏让路：和菜单栏滑出来一样干脆、不回弹——回弹会让岛和菜单栏底边之间一会儿有缝、一会儿压住（用户 2026-09-13 要严丝合缝）。
     static let dodgeDown = Animation.spring(response: 0.26, dampingFraction: 1.0)
     static let dodgeUp = Animation.spring(response: 0.32, dampingFraction: 1.0)
+    /// 两端顶角：让路时一开始就收掉凹肩；回刘海时贴回上沿之后再长出来，读作「合上」。
+    static let dodgeCornerOut = Animation.easeOut(duration: 0.12)
+    static let dodgeCornerIn = Animation.easeOut(duration: 0.16)
     /// 悬停鼓起：短而有一点回弹，像按下去之前的那一下。
     static let hoverSpring = Animation.spring(response: 0.26, dampingFraction: 0.62)
     /// 胶囊滴出去：有回弹，连桥拉长再断开；收回：不回弹，干脆地吸回岛里。
@@ -442,7 +450,7 @@ final class IslandController {
         if !on { afterCollapse(pin: state.pinned) }
         if on, state.dodge > 0 {                             // 展开就回到刘海：面板从刘海长出来
             dodgeOutSince = nil
-            withAnimation(Self.openHeight) { state.dodge = 0 }
+            withAnimation(Self.openHeight) { state.dodge = 0; state.dodgeCorner = 0 }
         }
         // 先量尺寸、再开动画。量一次要建一整棵展开态视图（实测约 30 ms）；放在动画开始之后，
         // 这段时间算进弹簧里，第一帧就跳一大截。
@@ -484,9 +492,14 @@ final class IslandController {
         guard !state.detail else { return }
         autoCollapse?.invalidate(); autoCollapse = nil
         hoverIntent?.cancel()
+        // 先记下岛上此刻显示的是哪个会话，再标已读：标完已读「主会话」按规则会换成别的会话，
+        // 面板就打开成了另一个——用户报「点进去之后展开的看板不是直接对应的内容」（2026-09-13）。
+        let shown = FocusRule.pair(store, seen, pinned: state.pinned).primary?.id
+        state.detailFocus = shown
+        if let shown { state.pinned = shown }       // 关面板收回时岛上还是这个会话，收稳后 afterCollapse 松开
         for s in store.sessions { seen.markSeen(s) }
-        demoLog("detail=true")
-        if state.dodge > 0 { dodgeOutSince = nil; withAnimation(Self.openHeight) { state.dodge = 0 } }
+        demoLog("detail=true focus=\(shown.map { String($0.prefix(8)) } ?? "nil")")
+        if state.dodge > 0 { dodgeOutSince = nil; withAnimation(Self.openHeight) { state.dodge = 0; state.dodgeCorner = 0 } }
         if !state.expanded { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(Self.openWidth) {
             state.detail = true
@@ -562,9 +575,22 @@ final class IslandController {
         let target: CGFloat = on ? menuBarHeight() : 0
         guard state.dodge != target else { return }
         demoLog("dodge=\(on)")
-        if !on { dodgeOutSince = nil }
-        if on { state.dodgeDepth = target }
-        withAnimation(on ? Self.dodgeDown : Self.dodgeUp) { state.dodge = target }
+        if on {
+            state.dodgeDepth = target
+            withAnimation(Self.dodgeDown) { state.dodge = target }
+            withAnimation(Self.dodgeCornerOut) { state.dodgeCorner = 1 }
+        } else {
+            dodgeOutSince = nil
+            // 两端的凹肩等主体贴回屏幕上沿再长；边走边长会先在半空冒出两只角。
+            withAnimation(Self.dodgeUp, completionCriteria: .logicallyComplete) {
+                state.dodge = 0
+            } completion: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.state.dodge == 0 else { return }
+                    withAnimation(Self.dodgeCornerIn) { self.state.dodgeCorner = 0 }
+                }
+            }
+        }
     }
 
     /// 菜单栏的高度。让路时灵动岛正好挂在菜单栏底边下、凹肩接住它——先前多让了 6pt，用户看到一条缝（2026-09-13）。

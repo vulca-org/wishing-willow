@@ -28,6 +28,10 @@ final class IslandState {
     var dodge: CGFloat = 0
     /// 让到底是多少（开始让路时定下的菜单栏高度）。形状按 dodge / dodgeDepth 从凹肩变成挂在刘海下的胶囊。
     var dodgeDepth: CGFloat = 0
+    /// 让路时两端顶角的形态：0 = 凹肩，1 = 全圆。和 dodge 分开排时序（见 NotchShape.capsule）。
+    var dodgeCorner: CGFloat = 0
+    /// 点开面板那一刻灵动岛上显示的会话。打开面板会把全部会话标成已读，标完再算「主会话」就换人了。
+    var detailFocus: String?
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、顶部两角凹肩、下方两角圆，和刘海连成一块。
@@ -61,7 +65,7 @@ struct IslandView: View {
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
         let label = pair.primary.flatMap { FocusRule.label($0, seen, store) }
         let shape = NotchShape(topRadius: radii.top, bottomRadius: radii.bottom,
-                               drop: state.dodge, dropDepth: state.dodgeDepth, stemWidth: stemWidth)
+                               drop: state.dodge, dropDepth: state.dodgeDepth, capsule: state.dodgeCorner, stemWidth: stemWidth)
         // 接鼠标只认主体、不认颈：让路时鼠标横穿刘海底下去点另一侧的菜单，不该算悬停。
         let hitShape = NotchShape(topRadius: radii.top, bottomRadius: radii.bottom)
 
@@ -73,7 +77,7 @@ struct IslandView: View {
                              pillOut: state.pillOut,
                              pillExtra: state.pillHover ? IslandController.pillPreview : 0,
                              pillWidth: state.pillWidth, notchHeight: notchHeight,
-                             bottomRadius: NotchShape.closed.bottom, lift: state.dodge,
+                             bottomRadius: NotchShape.closed.bottom, lift: state.dodge, liftDepth: state.dodgeDepth,
                              onTap: { onSwitch(other.id) }, onHover: onPillHover) {
                     SessionPill(pill: pill,
                                 preview: state.pillHover
@@ -89,7 +93,8 @@ struct IslandView: View {
                 shape.fill(Color.black.opacity(open || label != nil || state.hovering ? 1 : 0.02))
 
                 if state.detail {
-                    DetailView(store: store, seen: seen, notchWidth: notchWidth, notchHeight: notchHeight, onClose: onClose)
+                    DetailView(store: store, seen: seen, notchWidth: notchWidth, notchHeight: notchHeight, onClose: onClose,
+                               focus: state.detailFocus)
                         .frame(width: DetailView.size.width - 2 * NotchShape.open.top,
                                height: DetailView.size.height, alignment: .top)
                         .transition(Self.quickOut)
@@ -147,15 +152,18 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     let bottomRadius: CGFloat
     /// 岛此刻给菜单栏让了多少。连桥层的岛身平时往上伸出画布（免得模糊吃掉顶边）；让路时整层跟着下移，
     /// 再往上伸就是一条黑带盖在菜单栏上，所以让多少就少伸多少。
-    let lift: CGFloat
+    /// 让路时胶囊也跟着长到主体那么高、顶边贴住菜单栏，所以 lift 要逐帧插值。
+    var lift: CGFloat
+    let liftDepth: CGFloat
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let content: () -> Content
 
     init(islandWidth: CGFloat, anchorWidth: CGFloat? = nil, liquid: Bool = true, pillOut: CGFloat, pillExtra: CGFloat, pillWidth: CGFloat, notchHeight: CGFloat,
-         bottomRadius: CGFloat, lift: CGFloat = 0, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+         bottomRadius: CGFloat, lift: CGFloat = 0, liftDepth: CGFloat = 0, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
          @ViewBuilder content: @escaping () -> Content) {
         self.lift = lift
+        self.liftDepth = liftDepth
         self.islandWidth = islandWidth
         self.anchorWidth = anchorWidth
         self.liquid = liquid
@@ -169,19 +177,20 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
         self.content = content
     }
 
-    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
-        get { .init(islandWidth, .init(pillOut, pillExtra)) }
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>>> {
+        get { .init(islandWidth, .init(pillOut, .init(pillExtra, lift))) }
         set {
             islandWidth = newValue.first
             pillOut = newValue.second.first
-            pillExtra = newValue.second.second
+            pillExtra = newValue.second.second.first
+            lift = newValue.second.second.second
         }
     }
 
     var body: some View {
         GeometryReader { g in
             let w = pillWidth + pillExtra
-            let h = IslandController.pillHeight
+            let h = IslandController.dodgedPillHeight(dodge: lift, depth: liftDepth, notchHeight: notchHeight)
             let mid = g.size.width / 2
             let base = anchorWidth ?? islandWidth
             let tucked = base / 2 - w / 2 - 8

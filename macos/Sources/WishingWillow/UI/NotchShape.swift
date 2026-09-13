@@ -18,8 +18,12 @@ struct NotchShape: Shape {
     var bottomRadius: CGFloat
     /// 主体此刻往下让了多少；0 = 贴着刘海，与原来的形状逐点相同。
     var drop: CGFloat = 0
-    /// 让到底是多少（菜单栏高度），用来算进度：两端的凹肩在前 40% 收掉，之后长成全圆。
+    /// 让到底是多少（菜单栏高度），用来算接口倒角的进度。
     var dropDepth: CGFloat = 0
+    /// 两端顶角：0 = 凹肩（贴着屏幕上沿），1 = 全圆（挂在刘海下的胶囊）。不跟 drop 走，由调用方单独排时序：
+    /// 让路时一开始就收凹肩；回刘海时等主体贴回上沿再长凹肩。先前按 drop 的进度长，弹簧收尾那几 pt 走得慢，
+    /// 两端的凹肩先冒出来悬在半空、再和上沿合上——用户说「左右两个边角先出来才合并很奇怪」（2026-09-13）。
+    var capsule: CGFloat = 0
     /// 颈宽 = 物理刘海宽。没有物理刘海（外接屏）或挂在刘海下方让路时给 0：不画颈，只是一枚贴着菜单栏的胶囊。
     var stemWidth: CGFloat = 0
 
@@ -28,9 +32,12 @@ struct NotchShape: Shape {
     /// 颈顶就在刘海下沿露出一行亮像素（2026-09-13 逐帧：让到底前后各 3 帧）。
     static let stemReach: CGFloat = 6
 
-    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
-        get { .init(topRadius, .init(bottomRadius, drop)) }
-        set { topRadius = newValue.first; bottomRadius = newValue.second.first; drop = newValue.second.second }
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>>> {
+        get { .init(topRadius, .init(bottomRadius, .init(drop, capsule))) }
+        set {
+            topRadius = newValue.first; bottomRadius = newValue.second.first
+            drop = newValue.second.second.first; capsule = newValue.second.second.second
+        }
     }
 
     func path(in rect: CGRect) -> Path {
@@ -39,10 +46,10 @@ struct NotchShape: Shape {
         let left = rect.minX + t0, right = rect.maxX - t0
         let half = max(0, (right - left) / 2)
         let mid = rect.midX
-        // 顶角：先收凹肩，再长凸圆角；两者不同时出现。凹肩只在贴着屏幕上沿时成立，离开上沿就是两只翘起的小角——
-        // 先前让出 40% 才收掉，逐帧录屏里半空中两端各翘一只（2026-09-13），所以让出 15% 就收掉。
-        let shoulder = t0 * max(0, 1 - progress / 0.15)
-        var round = min(bottomRadius, rect.height / 2) * max(0, (progress - 0.15) / 0.85)
+        // 顶角：前一半收凹肩，后一半长凸圆角；两者不同时出现。
+        let blend = max(0, min(1, capsule))
+        let shoulder = t0 * max(0, 1 - blend / 0.5)
+        var round = min(bottomRadius, rect.height / 2) * max(0, (blend - 0.5) / 0.5)
         round = min(round, half)
         let b = min(bottomRadius, half, max(0, rect.height - max(shoulder, round)))
         // 颈与倒角：挤不下就先缩倒角、再缩颈。

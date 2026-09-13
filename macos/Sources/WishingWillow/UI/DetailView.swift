@@ -14,6 +14,8 @@ struct DetailView: View {
     var notchWidth: CGFloat = 185
     var notchHeight: CGFloat = 32
     var onClose: (() -> Void)? = nil
+    /// 打开时显示哪个会话：灵动岛上正显示的那个。先前不传，面板总是打开列表第一个（用户 2026-09-13 报「点进去不是对应的内容」）。
+    var focus: String? = nil
     @State private var picked: String?
     @State private var shown = Offscreen.isRendering
     @State private var openRows: Set<String> = []
@@ -27,8 +29,13 @@ struct DetailView: View {
     private static let keyline: CGFloat = 40
 
     private var sessions: [SessionState] { store.sessions }
-    private var current: SessionState? {
-        if let picked, let s = sessions.first(where: { $0.id == picked }) { return s }
+    private var current: SessionState? { Self.current(sessions, picked: picked, focus: focus) }
+
+    /// 面板里选中哪个会话：在面板里点过的 → 打开时灵动岛上显示的 → 列表第一个（那个会话已经不在时）。
+    static func current(_ sessions: [SessionState], picked: String?, focus: String?) -> SessionState? {
+        for id in [picked, focus].compactMap({ $0 }) {
+            if let s = sessions.first(where: { $0.id == id }) { return s }
+        }
         return sessions.first
     }
 
