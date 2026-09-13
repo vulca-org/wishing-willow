@@ -67,13 +67,15 @@ enum FocusRule {
         return l[(i + 1) % l.count]
     }
 
-    /// 并行计数。在跑 = 最近 10 分钟有动静（灵动岛上展示的那些）；空闲 = 进程还开着、但超过 10 分钟没动静。
+    /// 并行计数，口径跟 Claude Code 走：在跑 = 这一轮还没结束（`SessionState.isRunning`）；空闲 = 进程开着、这一轮已结束。
+    /// 不说「共 N 个」：Claude Code 侧栏里的会话这里看不全（没开过插件的、没打开的都不在），总数必然对不上。
     ///
-    /// 先前胶囊上写「+N」、展开态写「另有 N 个」，N 是主会话与胶囊之外的数：3 个并行时显示「+1」。
-    /// 用户读成「一共只多一个」（2026-09-13）——胶囊里那个本身就是另一个，没人这么数；
-    /// 而且开着但空闲的会话（本机当时 2 个）哪儿都不显示。改为说总数，空闲的单独说。
+    /// 先前按「最近 10 分钟有动静」算在跑（用户 2026-09-13：和 Claude Code 本身不符）；
+    /// 更早胶囊上写「+N」、展开态写「另有 N 个」，3 个并行时显示「+1」，被读成「一共只多一个」。
     static func parallel(_ store: WillowStore) -> (running: Int, idle: Int) {
-        (live(store).count, store.sessions.filter { $0.isStale && $0.isOpen }.count)
+        let open = store.sessions.filter(\.isOpen)
+        let running = open.filter(\.isRunning).count
+        return (running, open.count - running)
     }
 
     static func parallelSummary(running: Int, idle: Int) -> String {
@@ -129,6 +131,8 @@ enum FocusRule {
             let p = store.progress(for: s)
             if let t = p?.tag { return Label(text: t, carried: false) }      // 声明刚写出——临时标签
             if p?.decode != nil { return Label(text: L("有新声明", "New reading"), carried: false) }
+            // 这一轮没问（「继续吧」、后台任务通知）：不会有新标签，任务通常还是上一轮那个——沿用、调暗。
+            if s.record.reminded == false, let t = lastLoggedTag(s, store) { return Label(text: t, carried: true) }
             if let p, p.firstWriteAt == nil { return Label(text: L("思考中", "Thinking"), carried: true) }
             return Label(text: L("回答中", "Answering"), carried: true)
         }

@@ -55,14 +55,16 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if let d = record.decode, !d.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .declared(d)
         }
-        // 「没问」和「问了没答」必须分开：把「好的 继续吧」报成「问了，模型没写声明」
-        // 是一次假警报，而会被学会忽略的警报等于没有。旧记录没有这一位，保持原判。
-        if record.reminded == false { return .notAsked }
         // 还在回答：插件在 Stop 时才写下 turnEndedAt。在那之前「没有声明」只说明模型还没答完，
         // 报成「问了，模型没写声明」就是每一轮开头都冒一次的假警报（用户 2026-09-12 实测抓到的橙色字）。
+        // 放在「没问」前面：「继续吧」这类短句、后台任务通知开的一轮也是在跑——先前排在后面，这种轮次整轮显示「已结束 · 这一轮没问」，
+        // 不读实时进度、没有「Claude 在做」，和 Claude Code 的「在跑」对不上（2026-09-13 实拍）。没问的事由理解那一栏单独说。
         if record.hasTurnEndMarker && record.turnEndedAt == nil {
             return liveInterruptedAt == nil ? .inProgress : .interrupted
         }
+        // 「没问」和「问了没答」必须分开：把「好的 继续吧」报成「问了，模型没写声明」
+        // 是一次假警报，而会被学会忽略的警报等于没有。旧记录没有这一位，保持原判。
+        if record.reminded == false { return .notAsked }
         // 中途追加的一轮找不到理解，不等于没写：桌面端聊天记录不存夹在工具调用之间的文字（2026-09-13 实测）。
         // 报成橙色「问了没写」是假警报——两天里 5 条橙色全是这种。
         if record.midTurn == true { return .unverifiable }
@@ -85,15 +87,31 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if record.endedAt != nil { return true }
         if let pid = record.pid, !Self.processIsAlive(pid) { return true }
         if liveWaiting { return false }
+        if isRunning { return false }          // Claude Code 说在跑的，跑长工具不写记录也照样显示
         guard let updated = [record.updatedAt, liveLastEvent, transcriptWrittenAt].compactMap({ $0 }).max() else { return true }
         return now.timeIntervalSince(updated) > Self.staleAfter
     }
 
-    /// 进程还开着、会话没结束——不管最近有没有动静。「空闲」= 开着但陈旧。
+    /// 进程还开着、会话没结束——不管最近有没有动静。
     var isOpen: Bool {
         guard record.endedAt == nil, let pid = record.pid else { return false }
         return Self.processIsAlive(pid)
     }
+
+    /// 在跑，口径和 Claude Code 自己的一致：进程开着、这一轮还没结束（插件在 Stop 时才写 turnEndedAt）。
+    ///
+    /// 2026-09-13 对照 Claude Code 会话列表的 `isRunning`：本机 4 个在跑，与「这一轮没结束」逐个对上。
+    /// 先前按「最近 10 分钟有动静」算——刚答完几分钟的算成在跑，跑长工具不写记录的算成空闲，用户说和 Claude Code 对不上。
+    /// 一轮开着却一小时没有任何动静，多半是 Stop 钩子没跑到（插件被停用、钩子报错），不再算在跑。
+    var isRunning: Bool {
+        // 看轮次标记，不看 declaration：「继续吧」这类短句和后台任务通知在 declaration 里是「没问」，轮次照样开着。
+        // 用 declaration == .inProgress 会把它们算成空闲（2026-09-13 实拍：SIGIR 会话这一轮开着，面板写「这一轮没问」、计数少算一个）。
+        guard isOpen, record.hasTurnEndMarker, record.turnEndedAt == nil, liveInterruptedAt == nil else { return false }
+        guard let last = [record.updatedAt, liveLastEvent, transcriptWrittenAt].compactMap({ $0 }).max() else { return false }
+        return now.timeIntervalSince(last) < Self.stuckAfter
+    }
+
+    static let stuckAfter: TimeInterval = 60 * 60
 
     var age: TimeInterval? {
         guard let updated = record.updatedAt else { return nil }

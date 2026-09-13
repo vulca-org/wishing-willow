@@ -82,7 +82,7 @@ struct IslandView: View {
                     SessionPill(pill: pill,
                                 preview: state.pillHover
                                     ? (store.progress(for: other)?.tag ?? other.tag ?? FocusRule.lastLoggedTag(other, store) ?? other.workspace)
-                                      + L(" · 共 \(par.running) 个", " · \(par.running) running")
+                                      + L(" · \(par.running) 个在跑", " · \(par.running) running")
                                     : nil)
                 }
             }
@@ -411,7 +411,7 @@ struct IslandExpandedContent: View {
                 VStack(alignment: .leading, spacing: 12) {
                     request(s, tl).reveal(1, shown)
                     reading(s, tl).reveal(2, shown)
-                    if let tl { working(tl).reveal(3, shown) }
+                    if let tl { working(tl, asked: s.record.reminded != false).reveal(3, shown) }
                     stats(s, tl).reveal(4, shown)
                     if let other = FocusRule.flipTarget(store, after: s) {
                         otherRow(s, other, FocusRule.pill(other, seen, store)).reveal(5, shown)
@@ -517,7 +517,7 @@ struct IslandExpandedContent: View {
         return VStack(alignment: .leading, spacing: 4) {
             SectionHeader(title: system ? L("这一轮", "This turn") : L("你的要求", "Your request"), value: value.isEmpty ? nil : value)
             // 不是人说的话，不能挂在「你的要求」下面。
-            para(system ? L("系统消息（\(PromptSource.describe(s.prompt))），不是你说的", "System message (\(PromptSource.describe(s.prompt))) — not from you") : (s.prompt ?? "—"),
+            para(system ? L("系统消息（\(PromptSource.describe(s.prompt))），不是你说的", "System message (\(PromptSource.describe(s.prompt))) — not from you") : (s.prompt.map(Self.oneLine) ?? "—"),
                  system ? Ink.secondary : Ink.primary)
         }
     }
@@ -560,6 +560,10 @@ struct IslandExpandedContent: View {
                     Text(L("你撤回了这一轮", "You withdrew this turn")).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Ink.primary)
                 }
                 if let d = p?.decode { para(L("撤回前的理解：", "Reading before you withdrew: ") + d, Ink.tertiary) }
+            case .inProgress where s.record.reminded == false:
+                // 在跑但这一轮没问：不会写理解，不能挂「还没写出」。
+                SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: L("这一轮没问", "Not asked this turn"))
+                para(L("这一轮没问（太短或是系统消息）", "Not asked (too short, or a system message)"), Ink.tertiary)
             case .inProgress:
                 if let d = p?.decode {
                     SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: offsetNote(p?.declaredAt, tl).map { $0 + L(" 写出", " written") },
@@ -597,7 +601,7 @@ struct IslandExpandedContent: View {
 
     // MARK: Claude 在做
 
-    private func working(_ tl: TurnTimeline) -> some View {
+    private func working(_ tl: TurnTimeline, asked: Bool) -> some View {
         let p = tl.progress
         let live = tl.endedAt == nil && p.interruptedAt == nil
         var value = [L("\(p.steps.count) 步", "\(p.steps.count) steps")]
@@ -607,7 +611,7 @@ struct IslandExpandedContent: View {
             if live, let c = p.pendingChoice {
                 ChoiceCard(choice: c).transition(.opacity)
             }
-            TurnBar(timeline: tl)
+            TurnBar(timeline: tl, asked: asked)
             if !(live && p.pendingChoice != nil), !p.steps.isEmpty {
                 StepList(timeline: tl, limit: 2)
             }
@@ -646,12 +650,18 @@ struct IslandExpandedContent: View {
                         .padding(.vertical, 4)
                         .background(Capsule().fill(Color.white.opacity(0.1)))
                 } else {
-                    // 看过且没在答的会话在收起态不占胶囊，没有符号可放：写它此刻的阶段。
-                    Text(Self.phaseWord(other, store: store))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Ink.secondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                    // 看过且没在答的会话在收起态不占胶囊：照胶囊的样子画（灰点 + 阶段词，同字号同内边距）。
+                    // 先前是一段细字，和别的会话翻到这里时的胶囊摆在一起像两套 UI（2026-09-13 实拍）。
+                    HStack(spacing: 5) {
+                        Circle().fill(Color.white.opacity(0.35)).frame(width: 6, height: 6)
+                        Text(Self.phaseWord(other, store: store))
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(store.progress(for: other)?.tag ?? other.tag ?? FocusRule.lastLoggedTag(other, store) ?? L("还没有标签", "No tag yet"))
@@ -667,7 +677,7 @@ struct IslandExpandedContent: View {
                 // 说总数，不说「另有 N 个」：3 个并行时那句话写的是「另有 1 个」，读起来像一共只多一个。
                 let par = FocusRule.parallel(store)
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(L("共 \(par.running) 个在跑", "\(par.running) running")).font(Ink.number(10.5, .medium)).foregroundStyle(Ink.secondary)
+                    Text(L("\(par.running) 个在跑", "\(par.running) running")).font(Ink.number(10.5, .medium)).foregroundStyle(Ink.secondary)
                     if par.idle > 0 {
                         Text(L("\(par.idle) 个空闲", "\(par.idle) idle")).font(Ink.number(10)).foregroundStyle(Ink.tertiary)
                     }
@@ -684,6 +694,11 @@ struct IslandExpandedContent: View {
     }
 
     // MARK: 小件
+
+    /// 只放两行的原话：换行压成空格。带换行的要求先前第一行后面空一行、正文被挤掉（2026-09-13 实拍）。
+    static func oneLine(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\s*\\n+\\s*", with: " ", options: .regularExpression)
+    }
 
     private func para(_ text: String, _ color: Color) -> some View {
         Text(text)

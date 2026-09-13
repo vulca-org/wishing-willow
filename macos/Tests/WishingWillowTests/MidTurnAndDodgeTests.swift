@@ -90,7 +90,7 @@ struct MidTurnAndDodgeTests {
         #expect(p.withdrawnQueued == ["算了不用了"])
     }
 
-    @Test("在跑判定：状态文件 20 分钟没更新、聊天记录刚写过 → 在跑；聊天记录也 20 分钟没动 → 空闲")
+    @Test("岛上显示谁：状态文件 20 分钟没更新、聊天记录刚写过 → 还显示；聊天记录也 20 分钟没动 → 不显示。这一轮已结束，两次都算空闲、不算在跑")
     func transcriptActivity() throws {
         let d = try dir()
         let t = d.appendingPathComponent("busy.transcript.jsonl")
@@ -98,11 +98,13 @@ struct MidTurnAndDodgeTests {
         try write(record(["transcriptPath": t.path, "decode": "读成了", "tag": "剧本审阅"], id: "busy", ago: 1200), "busy.json", in: d)
         let store = WillowStore(directory: d)
         store.reload()
-        #expect(FocusRule.parallel(store).running == 1)
-        #expect(FocusRule.parallel(store).idle == 0)
+        #expect(FocusRule.live(store).count == 1)
+        #expect(FocusRule.parallel(store).running == 0)
+        #expect(FocusRule.parallel(store).idle == 1)
 
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-1200)], ofItemAtPath: t.path)
         store.reload()
+        #expect(FocusRule.live(store).isEmpty)
         #expect(FocusRule.parallel(store).running == 0)
         #expect(FocusRule.parallel(store).idle == 1)
     }
@@ -209,6 +211,34 @@ struct MidTurnAndDodgeTests {
         let single = WillowStore(directory: one)
         single.reload()
         #expect(FocusRule.flipTarget(single, after: single.sessions.first) == nil)
+    }
+
+    @Test("悬停面板一致：灵动岛没开着时结束的一轮，打开后从聊天记录补出时间线；开着又没问的一轮算进行中（结束后才是没问）")
+    func reconstructAndOpenTurn() throws {
+        let d = try dir()
+        let t = d.appendingPathComponent("done.transcript.jsonl")
+        let rows = [
+            #"{"type":"assistant","timestamp":"2026-09-13T13:00:05.000Z","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls","description":"Check state files"}}]}}"#,
+            #"{"type":"assistant","timestamp":"2026-09-13T13:00:06.000Z","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/a/b/extract.mjs"}}]}}"#,
+        ]
+        try Data((rows.joined(separator: "\n") + "\n").utf8).write(to: t)
+        try write(record(["transcriptPath": t.path, "transcriptOffset": 0, "decode": "读成了", "tag": "查状态"], id: "done"), "done.json", in: d)
+        try write(record(["reminded": false, "decode": NSNull(), "turnEndedAt": NSNull()], id: "cont"), "cont.json", in: d)
+        let store = WillowStore(directory: d)
+        store.reload()
+        let done = try #require(store.sessions.first { $0.id == "done" })
+        let tl = try #require(store.timeline(for: done))
+        #expect(tl.progress.steps.count == 2)
+        let cont = try #require(store.sessions.first { $0.id == "cont" })
+        #expect(cont.declaration == .inProgress)
+        #expect(cont.isRunning)
+        #expect(IslandExpandedContent.oneLine("推送到 GitHub 吧 接下来的问题：\n\n1. 动画") == "推送到 GitHub 吧 接下来的问题： 1. 动画")
+        // 没问理解的一轮：进度条整条是中性的「这一轮」，不画紫色「写出理解前」
+        let t0 = Date(timeIntervalSince1970: 1_789_300_000)
+        let quiet = TurnTimeline(startedAt: t0, endedAt: t0.addingTimeInterval(6), progress: TurnProgress())
+        #expect(TurnBar.segments(quiet, now: t0.addingTimeInterval(6), asked: false) == [.init(kind: .turn, from: 0, to: 1)])
+        #expect(TurnBar.segments(quiet, now: t0.addingTimeInterval(6)) == [.init(kind: .before, from: 0, to: 1)])
+        #expect(TurnBar.name(.turn) == "这一轮")
     }
 
     @Test("菜单栏让路：让开后鼠标在带子里一直让；离开不到 0.35 秒不回；超过才回；有菜单开着不回")

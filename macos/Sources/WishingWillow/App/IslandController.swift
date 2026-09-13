@@ -65,7 +65,8 @@ final class IslandController {
     /// 鼠标停在胶囊上时向右长出的宽度，用来放那个会话的标签。
     static let pillPreview: CGFloat = 130     // 标签 + 「· 共 N 个」
     /// 悬停那 0.3 秒里岛先鼓起多少。
-    static let hoverBump = CGSize(width: 10, height: 2)
+    /// 只往两边鼓、不往下鼓：往下那 2pt 在收起态底下读作「多出来一条黑的」（用户 2026-09-13）。
+    static let hoverBump = CGSize(width: 10, height: 0)
     static let shadowPad: CGFloat = 16
 
     // 弹簧参数的基准取自 boring.notch 源码：打开 (0.42, 0.8)、收起 (0.45, 1.0) 不回弹、内容挪位 (0.38, 0.8)。
@@ -73,6 +74,8 @@ final class IslandController {
     // 收起反过来，高先收回、宽再收进刘海。
     static let openWidth = Animation.spring(response: 0.34, dampingFraction: 0.84)
     static let openHeight = Animation.spring(response: 0.5, dampingFraction: 0.84)
+    /// 展开时高比宽晚起跑多久：让岛先从刘海往两边撑开，再往下长。
+    static let openHeightLag: TimeInterval = 0.12
     static let closeHeight = Animation.spring(response: 0.3, dampingFraction: 1.0)
     static let closeWidth = Animation.spring(response: 0.45, dampingFraction: 1.0)
     static let moveSpring = Animation.spring(response: 0.38, dampingFraction: 0.8)
@@ -165,7 +168,8 @@ final class IslandController {
         let label = primary.flatMap { FocusRule.label($0, seen, store) }
         var size = CGSize(width: label != nil ? g.width + Self.wingWidth(label: label?.text) * 2 + 2 * NotchShape.closed.top : g.width,
                           height: g.height)
-        if state.hovering {
+        // 缩回刘海时不鼓：鼓出来的那一圈黑色就在物理刘海外面，读作凭空多出来一块。
+        if state.hovering, label != nil {
             size.width += Self.hoverBump.width
             size.height += Self.hoverBump.height
         }
@@ -233,8 +237,10 @@ final class IslandController {
         }
         switch motion {
         case .open:
+            // 高晚一拍再长。宽要走的距离短（两边各 90pt 上下）、高要走 400pt，同时起跑时高的像素跑得快得多：
+            // 逐帧看是收起态宽度的一条黑带先往下长、再往两边撑开——用户说「先在下面多出来一条黑色的，然后再展开」（2026-09-13）。
             withAnimation(Self.openWidth) { state.shapeWidth = target.width }
-            withAnimation(Self.openHeight) { state.shapeHeight = target.height }
+            withAnimation(Self.openHeight.delay(Self.openHeightLag)) { state.shapeHeight = target.height }
         case .close:
             withAnimation(Self.closeHeight) { state.shapeHeight = target.height }
             withAnimation(Self.closeWidth) { state.shapeWidth = target.width }
@@ -618,6 +624,14 @@ final class IslandController {
 
     /// 演示用：让路与复原（录下移的样子，不依赖真鼠标）。
     func presentDodge(_ on: Bool) { setDodge(on) }
+
+    /// 演示用：翻到下一个在跑的会话，等于点悬停面板底部那一行。
+    func presentFlip() {
+        let current = FocusRule.pair(store, seen, pinned: state.pinned).primary
+        guard let next = FocusRule.flipTarget(store, after: current) else { demoLog("flip skipped: no next"); return }
+        demoLog("flip → \(next.id.prefix(8)) \(next.workspace) \(next.declaration)")
+        switchTo(next.id)
+    }
 
     func presentExpanded() {
         store.reload()

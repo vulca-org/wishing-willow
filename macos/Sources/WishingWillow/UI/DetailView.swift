@@ -49,7 +49,7 @@ struct DetailView: View {
             ears.reveal(0, shown, after: Self.revealAfter)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: L("会话", "Sessions"), value: L("\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)", "\(par.running) running · \(par.idle) idle"))
+                    SectionHeader(title: L("会话", "Sessions"), value: L("\(par.running) 在跑 · \(par.idle) 空闲", "\(par.running) running · \(par.idle) idle"))
                     sessionList.frame(height: min(CGFloat(sessions.count) * 42, 168), alignment: .top)
                     SessionChart(entries: entries, runningSince: running)
                         .frame(maxHeight: .infinity)
@@ -213,7 +213,7 @@ struct DetailView: View {
             if let tl = store.timeline(for: s) {
                 VStack(alignment: .leading, spacing: 8) {
                     if let c = p?.pendingChoice { ChoiceCard(choice: c) }
-                    TurnBar(timeline: tl, showsSentLabel: false)
+                    TurnBar(timeline: tl, showsSentLabel: false, asked: current?.record.reminded != false)
                     if !tl.progress.steps.isEmpty { StepList(timeline: tl, limit: 3) }
                 }
                 .padding(.leading, Self.keyline)

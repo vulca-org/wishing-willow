@@ -319,9 +319,12 @@ struct TurnBar: View {
     let timeline: TurnTimeline
     /// 图例末尾写不写「回车 / Sent」。点击面板里栏宽窄，只写时刻。
     var showsSentLabel = true
+    /// 这一轮问没问理解。没问（「继续吧」、后台任务通知）就不会有理解，整条画成中性的「这一轮」——
+    /// 先前照样画成紫色「写出理解前」，像在等一条不会来的理解（2026-09-13 实拍 SIGIR 会话）。
+    var asked = true
 
     struct Segment: Equatable {
-        enum Kind: Equatable, CaseIterable { case before, after, waiting }
+        enum Kind: Equatable, CaseIterable { case before, after, waiting, turn }
         let kind: Kind
         let from: Double
         let to: Double
@@ -333,12 +336,14 @@ struct TurnBar: View {
         return min(1, max(0, d.timeIntervalSince(tl.startedAt) / total))
     }
 
-    static func segments(_ tl: TurnTimeline, now: Date) -> [Segment] {
+    static func segments(_ tl: TurnTimeline, now: Date, asked: Bool = true) -> [Segment] {
         let d = fraction(tl.progress.declaredAt, tl, now: now)
         let c = tl.endedAt == nil ? fraction(tl.progress.pendingChoice?.at, tl, now: now) : nil
         let end = c ?? 1
         var out: [Segment] = []
-        if let d, d < end {
+        if !asked {
+            out.append(Segment(kind: .turn, from: 0, to: end))
+        } else if let d, d < end {
             out.append(Segment(kind: .before, from: 0, to: d))
             out.append(Segment(kind: .after, from: d, to: end))
         } else {
@@ -360,6 +365,7 @@ struct TurnBar: View {
         case .before: Color(red: 0.75, green: 0.35, blue: 0.95)     // systemPurple（暗色）
         case .after: Color(red: 0.0, green: 0.86, blue: 0.76)       // systemMint（暗色）
         case .waiting: Color(red: 0.04, green: 0.52, blue: 1.0)     // systemBlue（暗色）
+        case .turn: Color(white: 0.5)
         }
     }
 
@@ -368,6 +374,7 @@ struct TurnBar: View {
         case .before: L("写出理解前", "Before reading")
         case .after: L("写出理解后", "After reading")
         case .waiting: L("等你回应", "Waiting on you")
+        case .turn: L("这一轮", "This turn")
         }
     }
 
@@ -380,7 +387,7 @@ struct TurnBar: View {
     }
 
     private func content(now: Date) -> some View {
-        let segs = Self.segments(timeline, now: now)
+        let segs = Self.segments(timeline, now: now, asked: asked)
         let total = max(now.timeIntervalSince(timeline.startedAt), 1)
         return VStack(alignment: .leading, spacing: 7) {
             // 高度要装下：轨道 5+8、刻度 3+5、标签 2+约 11。先前给 30，标签画到 34，下半截被裁（2026-09-13 实拍）。

@@ -213,6 +213,7 @@ final class WillowStore {
         }
 
         sessions = Self.sort(found)
+        reconstructFinished()
 
         // 首次扫描不算「刚开始」——那只是 app 启动时看到的既有状态。
         if primed, let s = started.max(by: { ($0.record.updatedAt ?? .distantPast) < ($1.record.updatedAt ?? .distantPast) }) {
@@ -235,6 +236,27 @@ final class WillowStore {
         }
         primed = true
         onReload?()
+    }
+
+    /// 已经补读过的轮次（会话|轮次），每一轮只补读一次。
+    private var reconstructTried: Set<String> = []
+
+    /// 结束的一轮如果灵动岛当时没开着（重启、重新编译后才打开），就没留下时间线：悬停面板少一整块「Claude 做了」、
+    /// 数据条三格是「—」，同一块面板时有时无（用户 2026-09-13：「悬停打开的页面，里面的内容有的时候 UI 不一致」）。
+    /// 开着的会话每一轮补读一次：从这一轮的偏移读到文件末尾，一次最多 4 MB。
+    private func reconstructFinished() {
+        for s in sessions where s.isOpen && s.declaration != .inProgress && s.declaration != .interrupted {
+            guard let turn = s.record.turnId, finished[s.id]?.turn != turn else { continue }
+            let key = "\(s.id)|\(turn)"
+            guard !reconstructTried.contains(key), let path = s.record.transcriptPath,
+                  let off = s.record.transcriptOffset else { continue }
+            reconstructTried.insert(key)
+            guard let p = TranscriptFollower().progress(key: key, path: path, offset: off) else { continue }
+            let started = TurnLog.read(sessionId: s.id, directory: directory).last { $0.turnId == turn }?.at
+            finished[s.id] = FinishedTurn(turn: turn, timeline: TurnTimeline(
+                startedAt: started ?? p.firstWriteAt ?? s.record.updatedAt ?? Date(),
+                endedAt: s.record.turnEndedAt ?? p.lastEventAt ?? Date(), progress: p))
+        }
     }
 
     /// 续接会话第一轮没有偏移时，按原话在聊天记录里找到这一轮的开头。找到就记住；

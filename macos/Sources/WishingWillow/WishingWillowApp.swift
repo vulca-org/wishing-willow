@@ -89,6 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { c.presentDodge(true) }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { c.presentDodge(false) }
                 }
+                // --flip-cycle：展开后每 2.5 秒翻到下一个在跑的会话（悬停面板底部那一行）。
+                // 配 --real --backdrop 逐个拍每个会话的悬停面板，查同一块面板在不同会话、不同状态下长得不一样的地方。
+                if CommandLine.arguments.contains("--flip-cycle") {
+                    for k in 1...8 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2 + 2.5 * Double(k)) { c.presentFlip() }
+                    }
+                }
                 if CommandLine.arguments.contains("--pill-cycle") {
                     let t0 = 3.5
                     DispatchQueue.main.asyncAfter(deadline: .now() + t0) { c.presentExpanded() }
