@@ -164,7 +164,7 @@ final class IslandController {
         if state.detail { return DetailView.size }
         let g = notchGeometry()
         if expanded {
-            return CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: expandedHeight())
+            return CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: max(expandedHeight(), state.expandedFloor))
         }
         let primary = FocusRule.pair(store, seen, pinned: state.pinned).primary
         let label = primary.flatMap { FocusRule.label($0, seen, store) }
@@ -232,6 +232,7 @@ final class IslandController {
 
     /// 形状变到 target。宽、高各自一个动画事务。胶囊另由 updatePill 管。
     private func morph(to target: CGSize, _ motion: Motion, animated: Bool = true) {
+        state.layoutHeight = target.height
         guard animated else {
             state.shapeWidth = target.width
             state.shapeHeight = target.height
@@ -306,6 +307,7 @@ final class IslandController {
     }
 
     private func layout(animated: Bool) {
+        holdExpandedHeight()
         let target = targetShapeSize(expanded: state.expanded)
         if !(animated && state.shapeSize == target) {
             morph(to: target, .move, animated: animated)
@@ -421,13 +423,23 @@ final class IslandController {
         }
     }
 
+    /// 悬停展开、鼠标在面板里时，面板只长不缩：点翻页行翻到内容短的会话，面板一缩鼠标就落到面板外，
+    /// 悬停判定当成离开、整个收起（用户 2026-09-13 报）。收起、打开或关掉点击面板时清零。
+    /// force：演示里模拟点击翻页行，鼠标不在那儿。
+    private func holdExpandedHeight(force: Bool = false) {
+        guard state.expanded, !state.detail else { return }
+        guard force || shapeScreenRect().insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
+        state.expandedFloor = max(state.expandedFloor, state.shapeHeight)
+    }
+
     /// 底部那一行或胶囊：切到那个会话并展开。这是你主动点的，算看过。
-    private func switchTo(_ id: String) {
+    private func switchTo(_ id: String, force: Bool = false) {
         guard let s = store.sessions.first(where: { $0.id == id }) else { return }
         demoLog("switch \(id.prefix(8))")
         autoCollapse?.invalidate(); autoCollapse = nil
         seen.markSeen(s)
         if state.expanded {
+            holdExpandedHeight(force: force)
             withAnimation(Self.moveSpring) { state.pinned = id }
             morph(to: targetShapeSize(expanded: true), .move)
         } else {
@@ -452,6 +464,7 @@ final class IslandController {
 
     private func setExpanded(_ on: Bool, reason: String) {
         guard state.expanded != on else { return }
+        state.expandedFloor = 0
         // 每次展开/收回都记原因 —— 真实截图里「该展开的时候是收起的」，不记原因就只能猜。
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
@@ -500,6 +513,7 @@ final class IslandController {
         guard !state.detail else { return }
         autoCollapse?.invalidate(); autoCollapse = nil
         hoverIntent?.cancel()
+        state.expandedFloor = 0
         // 先记下岛上此刻显示的是哪个会话，再标已读：标完已读「主会话」按规则会换成别的会话，
         // 面板就打开成了另一个——用户报「点进去之后展开的看板不是直接对应的内容」（2026-09-13）。
         let shown = FocusRule.pair(store, seen, pinned: state.pinned).primary?.id
@@ -521,6 +535,7 @@ final class IslandController {
 
     func closeDetail() {
         guard state.detail else { return }
+        state.expandedFloor = 0
         removeOutsideMonitor()
         demoLog("detail=false")
         withAnimation(Self.closeHeight) { state.detail = false; state.expanded = false }
@@ -667,7 +682,7 @@ final class IslandController {
         let current = FocusRule.pair(store, seen, pinned: state.pinned).primary
         guard let next = FocusRule.flipTarget(store, after: current) else { demoLog("flip skipped: no next"); return }
         demoLog("flip → \(next.id.prefix(8)) \(next.workspace) \(next.declaration)")
-        switchTo(next.id)
+        switchTo(next.id, force: true)
     }
 
     func presentExpanded() {

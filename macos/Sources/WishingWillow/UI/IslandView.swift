@@ -32,6 +32,10 @@ final class IslandState {
     var dodgeCorner: CGFloat = 0
     /// 点开面板那一刻灵动岛上显示的会话。打开面板会把全部会话标成已读，标完再算「主会话」就换人了。
     var detailFocus: String?
+    /// 悬停展开、鼠标在面板里时，面板高度的下限：只长不缩（见 IslandController.holdExpandedHeight）。
+    var expandedFloor: CGFloat = 0
+    /// 形状最近一次变形的目标高度。翻页行按它钉在底边，不跟高度动画走。
+    var layoutHeight: CGFloat = 0
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、顶部两角凹肩、下方两角圆，和刘海连成一块。
@@ -101,9 +105,16 @@ struct IslandView: View {
                 } else if state.expanded {
                     // 内容按完整高度排版，形状长大时被裁切着逐渐露出——不在长大途中被压扁、重排。
                     IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
-                                          notchWidth: notchWidth, notchHeight: notchHeight, onSwitch: onSwitch)
+                                          notchWidth: notchWidth, notchHeight: notchHeight, onSwitch: onSwitch, part: .body)
                         .frame(width: IslandController.expandedWidth, alignment: .topLeading)
                         .fixedSize(horizontal: false, vertical: true)
+                        .transition(Self.quickOut)
+                    // 翻页那一行钉在面板底边。点它翻到内容短的会话时，面板在鼠标还在里面时不缩（IslandController.holdExpandedHeight），
+                    // 这一行也留在鼠标下，连着点还能接着翻。先前行跟着内容往上缩，鼠标落到面板外，悬停判定当成离开、整个收起（用户 2026-09-13 报）。
+                    // 高度用变形的目标值、不跟动画：展开途中这一行不被底边拖着走，由形状裁切着露出来。
+                    IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
+                                          notchWidth: notchWidth, notchHeight: notchHeight, onSwitch: onSwitch, part: .flipRow)
+                        .frame(width: IslandController.expandedWidth, height: state.layoutHeight, alignment: .bottom)
                         .transition(Self.quickOut)
                 } else if let f = pair.primary, let l = label {
                     CompactWings(store: store, seen: seen, session: f, label: l,
@@ -399,33 +410,48 @@ struct IslandExpandedContent: View {
     var notchWidth: CGFloat = 185
     var notchHeight: CGFloat = 32
     var onSwitch: ((String) -> Void)? = nil
+    /// 画哪一部分。悬停面板把翻页那一行单独钉在面板底边（见 IslandView），其余从顶上排；量高度用完整的一份。
+    /// 三份的几何一致：面板正好是完整高度时，拆开画和合在一起画每个像素都在同一个位置。
+    enum Part { case full, body, flipRow }
+    var part: Part = .full
 
     @State private var shown = Offscreen.isRendering
 
     var body: some View {
         let pair = FocusRule.pair(store, seen, pinned: pinned)
-        VStack(alignment: .leading, spacing: 0) {
-            ears(pair.primary).reveal(0, shown)
-            if let s = pair.primary {
-                let tl = store.timeline(for: s)
-                VStack(alignment: .leading, spacing: 12) {
-                    request(s, tl).reveal(1, shown)
-                    reading(s, tl).reveal(2, shown)
-                    if let tl { working(tl, asked: s.record.reminded != false).reveal(3, shown) }
-                    stats(s, tl).reveal(4, shown)
-                    if let other = FocusRule.flipTarget(store, after: s) {
-                        otherRow(s, other, FocusRule.pill(other, seen, store)).reveal(5, shown)
+        Group {
+            if part == .flipRow {
+                if let s = pair.primary, let other = FocusRule.flipTarget(store, after: s) {
+                    otherRow(s, other, FocusRule.pill(other, seen, store))
+                        .reveal(5, shown)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ears(pair.primary).reveal(0, shown)
+                    if let s = pair.primary {
+                        let tl = store.timeline(for: s)
+                        VStack(alignment: .leading, spacing: 12) {
+                            request(s, tl).reveal(1, shown)
+                            reading(s, tl).reveal(2, shown)
+                            if let tl { working(tl, asked: s.record.reminded != false).reveal(3, shown) }
+                            stats(s, tl).reveal(4, shown)
+                            if part == .full, let other = FocusRule.flipTarget(store, after: s) {
+                                otherRow(s, other, FocusRule.pill(other, seen, store)).reveal(5, shown)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 16)
+                    } else {
+                        Text(L("没有活动的会话", "No active sessions"))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Ink.secondary)
+                            .padding(16)
+                            .reveal(1, shown)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 16)
-            } else {
-                Text(L("没有活动的会话", "No active sessions"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Ink.secondary)
-                    .padding(16)
-                    .reveal(1, shown)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
