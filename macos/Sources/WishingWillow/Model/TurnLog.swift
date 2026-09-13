@@ -24,10 +24,16 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
     var prompt: String?
     var decode: String?
     var tag: String?
+    /// 这一条本身是中途追加进来的。
+    var midTurn: Bool?
+    /// 这一轮进行到一半，被你追加的下一条接走的时刻（不是被打断）。
+    var supersededAt: Date?
 
     var isSystemMessage: Bool { PromptSource.isSystem(origin: origin, prompt: prompt) }
     var declared: Bool { decode?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
     var flaggedByModel: Bool { decode?.hasPrefix("⚠") == true }
+    /// 和中途追加有关、又没有理解的一轮：之后写的理解夹在工具调用之间，聊天记录不存——核对不了，不是没写。
+    var unverifiable: Bool { !declared && interrupted != true && (midTurn == true || supersededAt != nil) }
 
     /// How long the turn took. Shown because a long turn that drifted is the
     /// expensive kind.
@@ -38,7 +44,7 @@ struct TurnLogEntry: Sendable, Equatable, Identifiable {
 }
 
 extension TurnLogEntry: Decodable {
-    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, interrupted, promptField, origin, prompt, decode, tag }
+    private enum K: String, CodingKey { case turnId, at, endedAt, reminded, interrupted, promptField, origin, prompt, decode, tag, midTurn, supersededAt }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -49,6 +55,8 @@ extension TurnLogEntry: Decodable {
         prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
+        midTurn = try c.decodeIfPresent(Bool.self, forKey: .midTurn)
+        supersededAt = (try c.decodeIfPresent(String.self, forKey: .supersededAt)).flatMap(WillowRecord.parseISO8601)
         at = (try c.decodeIfPresent(String.self, forKey: .at)).flatMap(WillowRecord.parseISO8601)
         endedAt = (try c.decodeIfPresent(String.self, forKey: .endedAt)).flatMap(WillowRecord.parseISO8601)
     }

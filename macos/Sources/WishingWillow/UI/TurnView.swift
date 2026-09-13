@@ -51,6 +51,13 @@ struct TurnView: View {
                     detail: L("打断不会写出声明。", "An interrupted turn writes no reading."),
                     tint: .secondary
                 )
+            case .unverifiable:
+                banner(
+                    icon: "circle.dashed",
+                    title: L("中途追加，无法核对", "Sent mid-turn, can’t verify"),
+                    detail: L("这条是 Claude 干活时追加的；之后写的理解不会存进聊天记录。", "You sent this while Claude was working; a reading written after it isn’t saved to the transcript."),
+                    tint: .secondary
+                )
             case .inProgress:
                 banner(
                     icon: "ellipsis",

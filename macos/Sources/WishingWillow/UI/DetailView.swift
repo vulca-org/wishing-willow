@@ -279,6 +279,8 @@ struct DetailView: View {
             line(L("理解", "Read"), t.decode ?? "", t.flaggedByModel ? .orange : Ink.primary, open: open)
         } else if t.interrupted == true {
             line(L("理解", "Read"), L("被打断，没来得及写", "Interrupted before one was written"), Ink.tertiary, open: open)
+        } else if t.unverifiable {
+            line(L("理解", "Read"), L("中途追加，无法核对", "Sent mid-turn — can’t verify"), Ink.tertiary, open: open)
         } else if t.reminded == true {
             line(L("理解", "Read"), L("问了，Claude 没写理解", "Asked, but Claude wrote no reading"), .orange, open: open)
         } else if t.reminded == false {
@@ -363,11 +365,12 @@ struct SessionChart: View {
     let entries: [TurnLogEntry]      // 旧 → 新
     var runningSince: Date? = nil
 
-    enum Outcome: CaseIterable { case declared, flagged, silent, notAsked, interrupted }
+    enum Outcome: CaseIterable { case declared, flagged, silent, notAsked, interrupted, unverifiable }
 
     static func outcome(_ e: TurnLogEntry) -> Outcome? {
         if e.interrupted == true { return .interrupted }
         if e.declared { return e.flaggedByModel ? .flagged : .declared }
+        if e.unverifiable { return .unverifiable }
         if e.reminded == true { return .silent }
         if e.reminded == false { return .notAsked }
         return nil
@@ -380,6 +383,7 @@ struct SessionChart: View {
         case .silent: L("问了没写", "No reading")
         case .notAsked: L("没问", "Not asked")
         case .interrupted: L("被打断", "Withdrawn")
+        case .unverifiable: L("无法核对", "Can’t verify")
         }
     }
 
@@ -390,6 +394,7 @@ struct SessionChart: View {
         case .silent: Color(red: 1, green: 0.42, blue: 0.36)
         case .notAsked: Color.white.opacity(0.28)
         case .interrupted: Color.white.opacity(0.5)
+        case .unverifiable: Color(red: 0.55, green: 0.62, blue: 0.72)   // 灰蓝：不是错，也不是没问
         case nil: Color.white.opacity(0.18)
         }
     }

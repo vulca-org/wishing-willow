@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-20",
+  "prompt_id": "pb",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "已提交并推送。"
+}

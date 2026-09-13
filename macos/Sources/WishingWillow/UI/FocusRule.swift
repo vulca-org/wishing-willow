@@ -123,6 +123,8 @@ enum FocusRule {
             return Label(text: L("回答中", "Answering"), carried: true)
         }
         guard seen.isUnread(s) else { return nil }          // 看过了 → 两翼缩回刘海，不遮东西
+        // 中途追加的一轮：核对不了，不是出错。灰色（沿用态），不占橙色（用户 2026-09-13 定）。
+        if s.declaration == .unverifiable { return Label(text: L("无法核对", "Can’t verify"), carried: true) }
         if s.declaration == .undeclared { return Label(text: L("没写声明", "No reading"), carried: false) }
         if let t = s.tag { return Label(text: t, carried: false) }
         if s.declaration == .notAsked, let t = lastLoggedTag(s, store) {

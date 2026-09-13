@@ -1,0 +1,42 @@
+{
+  "note": "中途追加：你在 Claude 干活时又发了一条，Claude Code 在同一轮里把它交给 Claude（queued_command 附件 + queue-operation remove，没有打断标记）。2026-09-13 实证（本会话 11:57）：之后写的理解夹在工具调用之间，桌面端聊天记录不存，Stop 找不到——记 midTurn，读方显示「无法核对」而不是「问了没写」。",
+  "session_id": "test-sess-20",
+  "steps": [
+    {
+      "append": "transcript.pre.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-a.json",
+      "stdout": "inject"
+    },
+    {
+      "append": "transcript.part-a.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-b.json",
+      "stdout": "inject"
+    },
+    {
+      "append": "transcript.part-b.jsonl"
+    },
+    {
+      "hook": "extract",
+      "input": "stop.json"
+    }
+  ],
+  "state_file": {
+    "midTurn": true,
+    "decode": null,
+    "prompt_startswith": "提交吧"
+  },
+  "log_lines": 2,
+  "log_last": {
+    "prompt": "提交吧。然后 README 先改用从收起态直接点开这条路径录面板素材。",
+    "midTurn": true,
+    "decode": null,
+    "interrupted": false,
+    "supersededAt": null
+  }
+}

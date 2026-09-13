@@ -231,7 +231,7 @@ for (const name of caseNames) {
         if (last) {
           for (const [k, want] of Object.entries(expect.log_last)) {
             const got = last[k] ?? null;
-            ok = check(name, `log.last.${k}`, got === want,
+            ok = check(name, `log.last.${k}`, want === '<NONNULL>' ? got !== null : got === want,
               `期望 ${JSON.stringify(want)}，得到 ${JSON.stringify(got)}`) && ok;
           }
         }

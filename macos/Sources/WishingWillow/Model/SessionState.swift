@@ -15,6 +15,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
         case notAsked           // 这一轮压根没问（太短或是系统消息）—— 不是模型没说话
         case inProgress         // 问了，模型还在回答 —— 声明要等这一轮写出来
         case interrupted        // 你打断了这一轮 —— 不会有声明，也不会有 Stop
+        case unverifiable       // 你在它干活时追加的一轮：之后写的理解聊天记录不存，核对不了 —— 不是没写
     }
 
     var id: String { record.sessionId }
@@ -27,6 +28,9 @@ struct SessionState: Identifiable, Sendable, Equatable {
     var liveInterruptedAt: Date? = nil
     /// 实时读到模型在等你选择。等待期间不落盘，不能按「10 分钟没动静」判过期（本机最长等过 1,357 秒）。
     var liveWaiting = false
+    /// 聊天记录文件最后一次写入。插件只在你回车和一轮结束时写状态文件，Claude 在这之外干的活
+    /// （后台任务通知、续跑）状态文件不知道——2026-09-13「项目最新剧本审阅」正在调工具，却被算成空闲。
+    var transcriptWrittenAt: Date? = nil
 
     var prompt: String? { record.prompt }
     var tag: String? {
@@ -59,6 +63,9 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if record.hasTurnEndMarker && record.turnEndedAt == nil {
             return liveInterruptedAt == nil ? .inProgress : .interrupted
         }
+        // 中途追加的一轮找不到理解，不等于没写：桌面端聊天记录不存夹在工具调用之间的文字（2026-09-13 实测）。
+        // 报成橙色「问了没写」是假警报——两天里 5 条橙色全是这种。
+        if record.midTurn == true { return .unverifiable }
         return .undeclared
     }
 
@@ -78,7 +85,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
         if record.endedAt != nil { return true }
         if let pid = record.pid, !Self.processIsAlive(pid) { return true }
         if liveWaiting { return false }
-        guard let updated = [record.updatedAt, liveLastEvent].compactMap({ $0 }).max() else { return true }
+        guard let updated = [record.updatedAt, liveLastEvent, transcriptWrittenAt].compactMap({ $0 }).max() else { return true }
         return now.timeIntervalSince(updated) > Self.staleAfter
     }
 

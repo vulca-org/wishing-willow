@@ -1,5 +1,5 @@
 {
-  "note": "被打断的一轮不会触发 Stop，下一条消息一来就把它覆盖，永远不进日志。2026-09-12 实证（会话 49f221ed）：18:38:53 发出、18:38:59 被打断、18:39:20 下一条——那一轮没有任何记录。覆盖之前先把它记进日志，标记 interrupted，并从 transcript 补回它已经写出的声明。",
+  "note": "被打断的一轮不会触发 Stop，下一条消息一来就把它覆盖，永远不进日志。2026-09-12 实证（会话 49f221ed）：18:38:53 发出、18:38:59 被打断、18:39:20 下一条——那一轮没有任何记录。覆盖之前先把它记进日志，标记 interrupted，并从 transcript 补回它已经写出的声明。 真打断在聊天记录里有「[Request interrupted by user]」标记（part-b）；没有标记的是中途追加，见 20、21。",
   "session_id": "test-sess-19",
   "steps": [
     {
@@ -14,6 +14,9 @@
       "append": "transcript.part-a.jsonl"
     },
     {
+      "append": "transcript.part-b.jsonl"
+    },
+    {
       "hook": "capture",
       "input": "ups-b.json",
       "stdout": "inject"
@@ -22,13 +25,15 @@
   "state_file": {
     "origin": "user",
     "turnEndedAt": null,
-    "prompt_startswith": "就是有问题"
+    "prompt_startswith": "就是有问题",
+    "midTurn": false
   },
   "log_lines": 1,
   "log_last": {
     "prompt": "我测试了一下 效果还行，然后就是动画，还有这个我输入的新指令冒出了黄色文字。",
     "interrupted": true,
     "decode": "先确认黄色文字是什么、为什么出现，再决定改哪里。",
-    "tag": "查黄色文字"
+    "tag": "查黄色文字",
+    "supersededAt": null
   }
 }

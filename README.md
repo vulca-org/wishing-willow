@@ -258,6 +258,12 @@ which side of that line it was measured on.
 **It has no idea whether you're drifting productively.** Plenty of turns go somewhere
 you didn't specify and that's fine. The two rows are information, not a verdict.
 
+**It cannot check a message you send while Claude is still working.** Claude Code
+hands such a message over in the middle of the turn, and on the author's machine the
+transcript keeps only the text before a turn's first tool call and its final text — so
+a reading Claude writes after that message never reaches the file. Those turns show a
+grey *can't verify*, not the orange *no reading*.
+
 **It has not shown that it saves turns.** That is the claim worth testing, and the
 turn log below exists to test it. Until that number exists, the honest description
 is: it makes the gap visible sooner.

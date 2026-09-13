@@ -304,7 +304,7 @@ struct AnatomyView: View {
             CenterSample(id: 3, center: .flagged, caption: L("没写 / 自标不一致", "Not written / flagged")),
             CenterSample(id: 4, center: .broken, caption: L("插件读不到", "Plugin can’t read")),
             CenterSample(id: 5, center: .withdrawn, caption: L("你撤回了", "You withdrew")),
-            CenterSample(id: 6, center: .idle, caption: L("这一轮没问", "Not asked")),
+            CenterSample(id: 6, center: .idle, caption: L("没问 / 无法核对", "Not asked / can’t verify")),
         ]
     }
 

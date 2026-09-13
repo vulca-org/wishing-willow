@@ -34,6 +34,8 @@ try {
       at: prev.updatedAt ?? null,
       endedAt,
       interrupted: false,
+      supersededAt: null,
+      midTurn: prev.midTurn === true,
       reminded: prev.reminded ?? null,
       promptField: prev.promptField ?? null,
       origin: prev.origin ?? null,
@@ -58,6 +60,7 @@ try {
       decode,
       tag,
       turnEndedAt: endedAt,
+      midTurn: false,
       endedAt: null,
     });
   }

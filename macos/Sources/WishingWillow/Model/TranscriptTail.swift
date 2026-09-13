@@ -31,6 +31,8 @@ struct TurnProgress: Sendable, Equatable {
     /// 撤回的排队消息。这种撤回不经过插件钩子，状态文件毫无变化，只有聊天记录里有一行
     /// （两天 92 次排队移除，88 次是系统通知，4 次是用户自己的文字）。
     var withdrawnQueued: [String] = []
+    /// 排队后被交给 Claude 的消息（queued_command 附件）。它们随后的 queue-operation remove 不是撤回。
+    var deliveredQueued: [String] = []
     /// 模型停下来等你做选择：AskUserQuestion 选择题或 ExitPlanMode 批准计划，还没收到回答。
     /// 这段时间模型什么都不写（本机 89 次中位 88 秒、最长 1,357 秒），只看落盘会以为它卡住或已结束。
     /// 问题与回答靠 tool_use 的 id 与回答里的 tool_use_id 对上（89/89 对）。
@@ -61,6 +63,7 @@ struct TurnProgress: Sendable, Equatable {
         case "assistant": break
         case "user": noteInterrupt(row, at: at); noteToolResult(row); return
         case "queue-operation": noteQueueRemove(row); return
+        case "attachment": noteQueuedCommand(row); return
         default: return
         }
         if firstWriteAt == nil { firstWriteAt = at }
@@ -137,10 +140,19 @@ struct TurnProgress: Sendable, Equatable {
         }
     }
 
+    /// 排队的消息被交给 Claude 时，记录里先写一条 queued_command 附件，再写 queue-operation remove；
+    /// 真撤回的只有 remove。先前把 remove 一律当撤回：你打的字被移出队列 30 次，27 次其实是送达（2026-09-13 核对 142 份记录）。
+    private mutating func noteQueuedCommand(_ row: [String: Any]) {
+        guard let a = row["attachment"] as? [String: Any], (a["type"] as? String) == "queued_command",
+              let p = (a["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty else { return }
+        deliveredQueued.append(p)
+    }
+
     private mutating func noteQueueRemove(_ row: [String: Any]) {
         guard (row["operation"] as? String) == "remove",
               let c = (row["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !c.isEmpty, !c.hasPrefix("<task-notification") else { return }
+        if let i = deliveredQueued.firstIndex(of: c) { deliveredQueued.remove(at: i); return }   // 送达，不是撤回
         withdrawnQueued.append(c)
     }
 

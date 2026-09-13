@@ -8,7 +8,7 @@
 import { statSync } from 'node:fs';
 import {
   SCHEMA, readStdin, parseInput, readPrompt, readState, writeState, shouldBypass, isSystemEnvelope,
-  appendTurnLog, findDeclaration, quietExit,
+  appendTurnLog, findDeclaration, interruptedSince, quietExit,
 } from './_willow.mjs';
 
 /**
@@ -70,16 +70,24 @@ try {
   // 2026-09-12 实证：两条 <task-notification> 覆盖了进行中的一轮，原话和声明一起丢了。
   if (origin === 'system' && inFlight) quietExit();
 
-  // 上一轮没结束就来了新的用户消息 = 上一轮被打断了（被打断不触发 Stop）。
-  // 覆盖之前先把它记进日志，并从 transcript 补回已经写出的声明——否则永远丢失。
-  // 只在这种少见情形下多做一次提取（约几十毫秒），平常的回车不受影响。
+  // 上一轮没结束就来了新的用户消息，有两种来历：你按了打断（被打断不触发 Stop），
+  // 或者你在 Claude 干活时又发了一条、Claude Code 在同一轮里把它交给 Claude（中途追加，这一轮没停）。
+  // 覆盖之前先把上一轮记进日志，并从 transcript 补回已经写出的声明——否则永远丢失。
+  // 只在这种少见情形下多读一次聊天记录（约几十毫秒），平常的回车不受影响。
+  const now = new Date().toISOString();
+  let midTurn = false;
   if (origin === 'user' && inFlight) {
     const found = findDeclaration({ transcript_path: input.transcript_path }, prev);
+    const interrupted = interruptedSince(input.transcript_path, prev.transcriptOffset);
+    midTurn = !interrupted;
     appendTurnLog(sessionId, {
       turnId: prev.turnId ?? null,
       at: prev.updatedAt ?? null,
       endedAt: null,
-      interrupted: true,
+      interrupted,
+      // 被追加的时刻。之后 Claude 写的理解夹在工具调用之间，聊天记录不存那段文字，读方据此显示「无法核对」。
+      supersededAt: interrupted ? null : now,
+      midTurn: prev.midTurn === true,
       reminded: prev.reminded ?? null,
       promptField: prev.promptField ?? null,
       origin: prev.origin ?? null,
@@ -100,10 +108,13 @@ try {
     // 得知道文件在哪。2026-09-12 实测：声明写出后要等整轮结束才读，中位在后台躺 280 秒。
     transcriptPath: typeof input.transcript_path === 'string' ? input.transcript_path : null,
     turnIndex: (prev?.turnIndex ?? -1) + 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
     prompt,
     promptField,
     origin,
+    // 这一条是在上一轮进行中追加进来的（见上）。桌面端聊天记录只存一轮里第一次调用工具之前的文字和最后一段文字
+    // （2026-09-13 实测），Claude 之后写的理解多半进不了文件——找不到不等于没写，读方显示「无法核对」。
+    midTurn,
     reminded: !bypass,
     decode: null,          // absence is the signal; extract.mjs fills it in
     tag: null,             // ≤6 字，同样由 extract.mjs 填

@@ -83,7 +83,7 @@ final class WillowStore {
         return SessionState(record: s.record, now: now,
                             liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
                             liveInterruptedAt: lp?.interruptedAt,
-                            liveWaiting: lp?.pendingChoice != nil)
+                            liveWaiting: lp?.pendingChoice != nil, transcriptWrittenAt: s.transcriptWrittenAt)
     }
 
     /// 活的在前；再按最近一次动静排序——状态文件的时间和实时读到的最后一次落盘，取较晚的。
@@ -96,7 +96,7 @@ final class WillowStore {
     }
 
     static func activity(_ s: SessionState) -> Date {
-        [s.record.updatedAt, s.liveLastEvent].compactMap { $0 }.max() ?? .distantPast
+        [s.record.updatedAt, s.liveLastEvent, s.transcriptWrittenAt].compactMap { $0 }.max() ?? .distantPast
     }
     private let follower = TranscriptFollower()
     /// 已经触发过「声明到达」的轮次（会话|轮次）。实时读先到、Stop 后到，只展开一次。
@@ -186,8 +186,13 @@ final class WillowStore {
                   let record = try? JSONDecoder().decode(WillowRecord.self, from: data)
             else { continue }   // 半写入或旧格式：跳过，下一次扫描会看到完整的
             let lp = liveProgress["\(record.sessionId)|\(record.turnId ?? "")"]
+            // 「在跑 / 空闲」按状态文件与聊天记录最后一次写入里较晚的算（用户 2026-09-13 定）。
+            let written = record.transcriptPath.flatMap {
+                (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
+            }
             found.append(SessionState(record: record, now: now,
-                                      liveLastEvent: lp?.lastEventAt, liveInterruptedAt: lp?.interruptedAt))
+                                      liveLastEvent: lp?.lastEventAt, liveInterruptedAt: lp?.interruptedAt,
+                                      transcriptWrittenAt: written))
         }
 
         // 先排一次、读实时进度，再把实时事件挂回去——陈旧判定与排序都要用到它。
@@ -321,7 +326,7 @@ final class WillowStore {
                 return SessionState(record: s.record, now: now,
                                     liveLastEvent: lp?.lastEventAt ?? s.liveLastEvent,
                                     liveInterruptedAt: lp?.interruptedAt,
-                                    liveWaiting: lp?.pendingChoice != nil)
+                                    liveWaiting: lp?.pendingChoice != nil, transcriptWrittenAt: s.transcriptWrittenAt)
             })
             changed = true
         }

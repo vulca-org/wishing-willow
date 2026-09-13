@@ -1,0 +1,36 @@
+{
+  "note": "中途追加时，被接走的上一轮不是「被打断」：记 interrupted:false 与 supersededAt（被追加的时刻），并补回它已写出的声明。先前一律记成被打断（两天里 5 条全错）。",
+  "session_id": "test-sess-21",
+  "steps": [
+    {
+      "append": "transcript.pre.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-a.json",
+      "stdout": "inject"
+    },
+    {
+      "append": "transcript.part-a.jsonl"
+    },
+    {
+      "hook": "capture",
+      "input": "ups-b.json",
+      "stdout": "inject"
+    }
+  ],
+  "state_file": {
+    "midTurn": true,
+    "turnEndedAt": null,
+    "prompt_startswith": "提交吧"
+  },
+  "log_lines": 1,
+  "log_last": {
+    "prompt": "把面板里被截断的英文修掉，然后重录中英两套素材。",
+    "interrupted": false,
+    "supersededAt": "<NONNULL>",
+    "midTurn": false,
+    "decode": "先修面板里被截断的英文标签，再重录中英两套面板素材。",
+    "tag": "修截断重录"
+  }
+}

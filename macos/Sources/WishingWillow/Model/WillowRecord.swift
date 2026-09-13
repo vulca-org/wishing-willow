@@ -38,6 +38,9 @@ struct WillowRecord: Sendable, Equatable {
     var decode: String?
     /// 模型自己压出来的 ≤6 字标签。刘海常亮层唯一放得下的东西。
     var tag: String?
+    /// 这一条是在上一轮进行中追加进来的（插件写下的事实）。Claude 之后写的理解夹在工具调用之间，
+    /// 桌面端聊天记录不存那段文字——找不到不等于没写。旧记录没有这个键。
+    var midTurn: Bool? = nil
     /// 这一轮什么时候结束的。插件在 Stop 时写下；null = 还在回答。
     var turnEndedAt: Date?
     /// 记录里有没有 `turnEndedAt` 这个键。旧记录没有，没法区分「在回答」和「答完了」。
@@ -47,7 +50,7 @@ struct WillowRecord: Sendable, Equatable {
 
 extension WillowRecord: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, turnId, transcriptPath, transcriptOffset, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, turnEndedAt, endedAt
+        case schema, sessionId, pid, cwd, turnId, transcriptPath, transcriptOffset, turnIndex, updatedAt, prompt, promptField, reminded, origin, decode, tag, turnEndedAt, endedAt, midTurn
     }
 
     init(from decoder: any Decoder) throws {
@@ -65,6 +68,7 @@ extension WillowRecord: Decodable {
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         decode = try c.decodeIfPresent(String.self, forKey: .decode)
         tag = try c.decodeIfPresent(String.self, forKey: .tag)
+        midTurn = try c.decodeIfPresent(Bool.self, forKey: .midTurn)
 
         // `decodeIfPresent` returns nil for both "key missing" and "key is null",
         // and those two mean different things here — so ask the container directly.

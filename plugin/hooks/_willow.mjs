@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdir
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-export const SCHEMA = 9;
+export const SCHEMA = 10;
 
 /** Where state lives. Overridable so tests never touch the real directory. */
 export function stateDir() {
@@ -382,6 +382,34 @@ function assistantTexts(row) {
   if (typeof c === 'string') return [c];
   if (!Array.isArray(c)) return [];
   return c.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text);
+}
+
+/**
+ * 上一轮到底是被打断了，还是你在 Claude 干活时又追加了一条。
+ *
+ * 上一轮没结束就来了新的用户消息，有两种来历（2026-09-13 核对本机 142 份聊天记录）：
+ * - 你按了打断：记录里先出现一条「[Request interrupted by user…]」的用户消息，之后才是你的新消息；
+ * - 你没打断，只是又发了一条：Claude Code 把它排进队列，等 Claude 做完手头那次工具调用，
+ *   在**同一轮**里交给 Claude（记录里是 queued_command 附件 + queue-operation remove，没有新的用户行）。
+ *   这一轮没停，Claude 接着做。你打的字被移出队列的 30 次里，27 次是这样送达的。
+ * 从上一轮的偏移往后找打断标记：找到 = 被打断；没找到 = 中途追加。
+ * 读不到聊天记录或不知道偏移时按旧办法算被打断——宁可沿用旧判定，也不凭空说「中途追加」。
+ */
+export function interruptedSince(path, offset) {
+  if (typeof path !== 'string' || !path || typeof offset !== 'number') return true;
+  try { statSync(path); } catch { return true; }
+  const text = slice(path, offset, 64 << 20);
+  for (const line of text.split('\n')) {
+    if (!line.includes('Request interrupted by user')) continue;
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row?.type !== 'user' || row.isSidechain === true) continue;
+    const c = row.message?.content;
+    const t = typeof c === 'string' ? c
+      : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text ?? '').join(' ') : '';
+    if (t.trim().startsWith('[Request interrupted by user')) return true;
+  }
+  return false;
 }
 
 /**

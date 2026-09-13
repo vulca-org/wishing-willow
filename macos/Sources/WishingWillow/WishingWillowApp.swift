@@ -67,7 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
                     if CommandLine.arguments.contains("--detail") {
                         c.presentDetail()
-                    } else if !CommandLine.arguments.contains("--pill-cycle") && !CommandLine.arguments.contains("--hover-cycle") {
+                    } else if !CommandLine.arguments.contains("--pill-cycle") && !CommandLine.arguments.contains("--hover-cycle")
+                                && !CommandLine.arguments.contains("--dodge-cycle") {
                         c.presentExpanded()
                     }
                 }
@@ -82,6 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if CommandLine.arguments.contains("--hover-cycle") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { c.presentHover(true) }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { c.presentHover(false) }
+                }
+                // --dodge-cycle：让路 → 复原。录「菜单栏滑出来时灵动岛往下让」的样子，不依赖真鼠标。
+                if CommandLine.arguments.contains("--dodge-cycle") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { c.presentDodge(true) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { c.presentDodge(false) }
                 }
                 if CommandLine.arguments.contains("--pill-cycle") {
                     let t0 = 3.5

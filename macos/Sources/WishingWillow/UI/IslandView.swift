@@ -24,6 +24,8 @@ final class IslandState {
     var pillHover = false
     /// 鼠标刚进灵动岛、还没到展开的 0.3 秒：岛先微微鼓一下，让人知道它接到了。
     var hovering = false
+    /// 给菜单栏让路时往下挪的距离；0 = 贴着刘海。让路时正好是菜单栏的高度：凹肩接住菜单栏底边，严丝合缝。
+    var dodge: CGFloat = 0
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、顶部两角凹肩、下方两角圆，和刘海连成一块。
@@ -109,6 +111,8 @@ struct IslandView: View {
             .onHover(perform: onHover)
             .onTapGesture { if !state.detail { onClick() } }   // 面板里的点击交给面板自己
         }
+        // 菜单栏滑出来时整体往下让（见 DodgeRule）。偏移在舞台里做，不挪窗口：窗口改位置那一帧会跳。
+        .offset(y: state.dodge)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
     }
@@ -478,7 +482,7 @@ struct IslandExpandedContent: View {
             if let c = p.pendingChoice { return c.kind == .plan ? L("等你批准", "Awaiting approval") : L("等你选择", "Your turn") }
             if p.decode != nil { return L("实时", "Live") }
             return p.firstWriteAt == nil ? L("思考中", "Thinking") : L("回答中", "Answering")
-        case .declared, .undeclared, .notAsked: return L("已结束", "Ended")
+        case .declared, .undeclared, .notAsked, .unverifiable: return L("已结束", "Ended")
         }
     }
 
@@ -512,6 +516,11 @@ struct IslandExpandedContent: View {
             case .undeclared:
                 SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: L("已结束 · 没有写", "Ended · none written"), valueTint: .orange)
                 para(L("问了，Claude 没写理解", "Asked, but Claude wrote no reading"), .orange)
+            case .unverifiable:
+                SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: L("中途追加 · 无法核对", "Sent mid-turn · can’t verify"))
+                para(L("这条是 Claude 干活时追加的。之后写的理解不会存进聊天记录，这一轮核对不了——不代表没写。",
+                       "You sent this while Claude was working. A reading written after it isn’t saved to the transcript, so this turn can’t be checked — that doesn’t mean none was written."),
+                     Ink.tertiary)
             case .unreadable:
                 SectionHeader(title: L("Claude 的理解", "Claude’s reading"), value: L("插件读不到输入", "Plugin can’t read the input"), valueTint: .red)
                 para(L("读不到本轮输入 —— 插件坏了，不是 Claude 没说话", "Can’t read this turn’s input — the plugin is broken, Claude isn’t silent"), .red)

@@ -44,6 +44,9 @@ final class IslandController {
     private var pillRetract: DispatchWorkItem?
     private var arrivals = ArrivalQueue()
     private var outsideMonitor: Any?
+    private var dodgeTimer: Timer?
+    /// 让路之后鼠标离开顶边带子的时刻；离开够久才回刘海。
+    private var dodgeOutSince: Date?
 
     private(set) var yielding = false
 
@@ -68,6 +71,9 @@ final class IslandController {
     static let closeHeight = Animation.spring(response: 0.3, dampingFraction: 1.0)
     static let closeWidth = Animation.spring(response: 0.45, dampingFraction: 1.0)
     static let moveSpring = Animation.spring(response: 0.38, dampingFraction: 0.8)
+    /// 给菜单栏让路：和菜单栏滑出来一样干脆、不回弹——回弹会让岛和菜单栏底边之间一会儿有缝、一会儿压住（用户 2026-09-13 要严丝合缝）。
+    static let dodgeDown = Animation.spring(response: 0.26, dampingFraction: 1.0)
+    static let dodgeUp = Animation.spring(response: 0.32, dampingFraction: 1.0)
     /// 悬停鼓起：短而有一点回弹，像按下去之前的那一下。
     static let hoverSpring = Animation.spring(response: 0.26, dampingFraction: 0.62)
     /// 胶囊滴出去：有回弹，连桥拉长再断开；收回：不回弹，干脆地吸回岛里。
@@ -110,6 +116,7 @@ final class IslandController {
         morph(to: targetShapeSize(expanded: false), .move, animated: false)
         updatePill(animated: false)
         panel.orderFrontRegardless()
+        startDodgeWatch()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -198,10 +205,10 @@ final class IslandController {
     }
 
     /// 黑色形状此刻在屏幕上的矩形。悬停与点外面的判断用它，不用舞台——舞台比形状大。
-    private func shapeScreenRect() -> NSRect {
+    private func shapeScreenRect(ignoringDodge: Bool = false) -> NSRect {
         guard let s = screen() else { return .zero }
         let g = notchGeometry()
-        let drop: CGFloat = yielding ? g.height + 6 : 0
+        let drop: CGFloat = (yielding ? g.height + 6 : 0) + (ignoringDodge ? 0 : state.dodge)
         return NSRect(x: g.midX - state.shapeWidth / 2, y: s.frame.maxY - drop - state.shapeHeight,
                       width: state.shapeWidth, height: state.shapeHeight)
     }
@@ -432,6 +439,10 @@ final class IslandController {
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
         if !on { afterCollapse(pin: state.pinned) }
+        if on, state.dodge > 0 {                             // 展开就回到刘海：面板从刘海长出来
+            dodgeOutSince = nil
+            withAnimation(Self.openHeight) { state.dodge = 0 }
+        }
         // 先量尺寸、再开动画。量一次要建一整棵展开态视图（实测约 30 ms）；放在动画开始之后，
         // 这段时间算进弹簧里，第一帧就跳一大截。
         let measureStart = Date()
@@ -474,6 +485,7 @@ final class IslandController {
         hoverIntent?.cancel()
         for s in store.sessions { seen.markSeen(s) }
         demoLog("detail=true")
+        if state.dodge > 0 { dodgeOutSince = nil; withAnimation(Self.openHeight) { state.dodge = 0 } }
         if !state.expanded { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(Self.openWidth) {
             state.detail = true
@@ -511,6 +523,62 @@ final class IslandController {
         outsideMonitor = nil
     }
 
+    // MARK: 菜单栏让路
+
+    private func startDodgeWatch() {
+        // 只读鼠标位置，不装全局事件监听，不要辅助功能权限。0.1 秒一次，比菜单栏滑出来的动画快。
+        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.dodgeTick() }
+        }
+        t.tolerance = 0.03
+        RunLoop.main.add(t, forMode: .common)
+        dodgeTimer = t
+    }
+
+    private func dodgeTick() {
+        // 演示与录素材时不跟真鼠标走，和悬停一样。
+        if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { return }
+        guard let s = screen() else { return }
+        let g = notchGeometry()
+        // 收起态、而且两翼或胶囊画着东西才会挡：缩回刘海时形状和物理刘海一样宽。
+        let active = !state.expanded && !state.detail && (state.shapeWidth > g.width + 1 || state.pillWidth > 0)
+        let band = DodgeRule.band(screen: s.frame, height: g.height)
+        var island = shapeScreenRect(ignoringDodge: true)
+        if state.pillWidth > 0 {
+            island.size.width += Self.pillGap + state.pillWidth + (state.pillHover ? Self.pillPreview : 0)
+        }
+        let p = NSEvent.mouseLocation
+        let dodging = state.dodge > 0
+        let menuOpen = dodging && !DodgeRule.inBand(p, band) && Self.popUpMenuOpen()
+        let r = DodgeRule.next(dodging: dodging, active: active, pointer: p, band: band, island: island,
+                               outSince: dodgeOutSince, now: Date(), menuOpen: menuOpen)
+        dodgeOutSince = r.outSince
+        if r.dodge != dodging { setDodge(r.dodge) }
+    }
+
+    private func setDodge(_ on: Bool) {
+        let target: CGFloat = on ? menuBarHeight() : 0
+        guard state.dodge != target else { return }
+        demoLog("dodge=\(on)")
+        if !on { dodgeOutSince = nil }
+        withAnimation(on ? Self.dodgeDown : Self.dodgeUp) { state.dodge = target }
+    }
+
+    /// 菜单栏的高度。让路时灵动岛正好挂在菜单栏底边下、凹肩接住它——先前多让了 6pt，用户看到一条缝（2026-09-13）。
+    /// 菜单栏自动隐藏时 visibleFrame 仍然扣掉菜单栏那一条（这台机器 28pt）；取不到就按刘海高度。
+    private func menuBarHeight() -> CGFloat {
+        guard let s = screen() else { return notchGeometry().height }
+        let inset = s.frame.maxY - s.visibleFrame.maxY
+        return inset > 0 ? inset : notchGeometry().height
+    }
+
+    /// 有没有下拉菜单开着：菜单栏里点开的菜单画在 popUpMenu 这一层。只读窗口层级，不要屏幕录制权限。
+    static func popUpMenuOpen() -> Bool {
+        let level = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        return info.contains { ($0[kCGWindowLayer as String] as? Int) == level }
+    }
+
     // MARK: 给 --present 用
 
     /// 演示用：直接打开点击后的面板。
@@ -518,6 +586,9 @@ final class IslandController {
 
     /// 演示用：走真实悬停路径（先鼓一下、hoverDelay 后展开；移开后收起），不看鼠标位置。
     func presentHover(_ inside: Bool) { hoverBody(inside, force: true) }
+
+    /// 演示用：让路与复原（录下移的样子，不依赖真鼠标）。
+    func presentDodge(_ on: Bool) { setDodge(on) }
 
     func presentExpanded() {
         store.reload()

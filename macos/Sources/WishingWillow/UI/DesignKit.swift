@@ -144,7 +144,7 @@ enum StatusCenter: Equatable {
         case .inProgress: return .live
         case .declared: return s.flaggedByModel ? .flagged : .done
         case .undeclared: return .flagged
-        case .notAsked, .awaiting: return .idle
+        case .notAsked, .awaiting, .unverifiable: return .idle
         case .unreadable, .interrupted: return .broken
         }
     }
