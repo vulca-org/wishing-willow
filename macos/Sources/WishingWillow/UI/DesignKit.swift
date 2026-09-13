@@ -262,9 +262,10 @@ struct DemoMark: View {
     var compact = false
 
     var body: some View {
-        if PresentDemo.seconds != nil, compact {
+        // README 素材（--backdrop）的底色盖满整屏，不会被当成真屏幕上的会话，不画标记。
+        if PresentDemo.seconds != nil, !Backdrop.isOn, compact {
             Circle().fill(Color.yellow).frame(width: 6, height: 6).help(L("演示数据", "Demo data"))
-        } else if PresentDemo.seconds != nil {
+        } else if PresentDemo.seconds != nil, !Backdrop.isOn {
             Text(L("演示", "Demo"))
                 .font(.system(size: 9, weight: .bold))
                 .padding(.horizontal, 5).padding(.vertical, 1.5)

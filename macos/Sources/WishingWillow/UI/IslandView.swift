@@ -418,15 +418,19 @@ struct IslandExpandedContent: View {
             HStack(spacing: 6) {
                 if let s {
                     let tag = Self.earTag(s, store: store, seen: seen)
+                    // 标签先占位、放不下时缩到 0.8 再截断；阶段词保持原宽。英文标签（插件允许 ≤14 字符）先前被阶段词挤成「Fix upload t…」。
                     Text(tag.text)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(s.flaggedByModel ? Color.orange : (tag.carried ? Ink.tertiary : Ink.primary))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .layoutPriority(1)
                     Spacer(minLength: 4)
                     Text(Self.phaseWord(s, store: store))
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Ink.tertiary)
                         .lineLimit(1)
+                        .fixedSize()
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -658,10 +662,14 @@ struct StepList: View {
     var body: some View {
         let steps = timeline.progress.steps
         let recent = Array(steps.suffix(limit))
+        let first = steps.count - recent.count
         let live = timeline.endedAt == nil && timeline.progress.interruptedAt == nil
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(recent.enumerated()), id: \.offset) { i, st in
-                let current = live && i == recent.count - 1
+            // 每一步用它在整轮步骤数组里的下标当身份（步骤只追加、不删）。
+            // 先前用可见行号：新步骤到达时同一行的文字原地交叉淡变，录屏里「Find retry」和「Run upload tests」叠在一起（2026-09-13 动图帧对照）。
+            ForEach(first..<steps.count, id: \.self) { k in
+                let st = steps[k]
+                let current = live && k == steps.count - 1
                 HStack(spacing: 8) {
                     Image(systemName: ToolSymbol.name(st.tool))
                         .font(.system(size: 10, weight: .semibold))
@@ -679,6 +687,8 @@ struct StepList: View {
                             .foregroundStyle(Ink.tertiary)
                     }
                 }
+                // 旧行直接消失、下面的行上移、新行随后淡入：任何一帧里两行字都不会叠在同一个位置。
+                .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.1)), removal: .identity))
             }
         }
     }

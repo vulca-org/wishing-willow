@@ -47,6 +47,7 @@ final class IslandController {
 
     private(set) var yielding = false
 
+    static let wingMax: CGFloat = 124
     static let wing: CGFloat = 92   // 76 贴圆角、84 加内边距后截断成「审幻灯片…」；按 6 字 ≈ 72pt 算
     static let expandedWidth: CGFloat = 500     // 内容宽；形状再加两侧凹肩
     static let maxExpandedHeight: CGFloat = 470
@@ -142,14 +143,23 @@ final class IslandController {
             return CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: expandedHeight())
         }
         let primary = FocusRule.pair(store, seen, pinned: state.pinned).primary
-        let wings = primary.flatMap { FocusRule.label($0, seen, store) } != nil
-        var size = CGSize(width: wings ? g.width + Self.wing * 2 + 2 * NotchShape.closed.top : g.width,
+        let label = primary.flatMap { FocusRule.label($0, seen, store) }
+        var size = CGSize(width: label != nil ? g.width + Self.wingWidth(label: label?.text) * 2 + 2 * NotchShape.closed.top : g.width,
                           height: g.height)
         if state.hovering {
             size.width += Self.hoverBump.width
             size.height += Self.hoverBump.height
         }
         return size
+    }
+
+    /// 两翼宽度按右翼标签的实际字宽定，左右等宽，重心不偏。
+    /// 92 是按 6 个汉字（约 72pt）定的；插件允许英文标签 ≤14 个字符，12pt 半粗约 95pt，
+    /// 92 把「Fix upload test」截成了「Fix upload t…」（2026-09-13 README 英文素材）。
+    static func wingWidth(label: String?) -> CGFloat {
+        guard let label, !label.isEmpty else { return wing }
+        let text = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold)]).width
+        return min(wingMax, max(wing, ceil(text) + 12 + 4))
     }
 
     /// 第二个会话的胶囊宽度。只在收起态出现：展开后它挪进展开态底部那一行。
@@ -166,7 +176,7 @@ final class IslandController {
     /// 推断是窗口变大那一帧旧画面贴在新窗口左下角，形状先偏左再弹回中间——用户看到的「从左到右出现」。
     private func stageSize() -> CGSize {
         let g = notchGeometry()
-        let compactWithPill = g.width + Self.wing * 2 + 2 * NotchShape.closed.top + Self.hoverBump.width
+        let compactWithPill = g.width + Self.wingMax * 2 + 2 * NotchShape.closed.top + Self.hoverBump.width
             + 2 * (Self.pillGap + Self.pillMax + Self.pillPreview + 10)
         let w = max(DetailView.size.width, Self.expandedWidth + 2 * NotchShape.open.top, compactWithPill) + 2 * Self.shadowPad
         let h = max(DetailView.size.height, Self.maxExpandedHeight) + Self.shadowPad
@@ -298,7 +308,8 @@ final class IslandController {
     private func hover(_ inside: Bool) {
         // 演示要可复现：你的鼠标恰好经过展开后的面板，悬停收回就会让「展开态」截图拍成收起态。
         // 忽略，但记下来——被忽略的事件本身就是证据。
-        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored hover inside=\(inside)"); return }
+        // 录 README 素材（--backdrop）时也不理悬停：真人鼠标经过会把要拍的展开态收掉——2026-09-13 英文两张静帧就这样拍成了收起态。
+        if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { demoLog("ignored hover inside=\(inside)"); return }
         if state.detail { return }                          // 面板打开时悬停不收放
         hoverIntent?.cancel()
         if inside {
@@ -336,7 +347,7 @@ final class IslandController {
 
     /// 鼠标停在胶囊上：胶囊向右长出，预览那个会话的标签。
     private func pillHover(_ inside: Bool) {
-        if PresentDemo.seconds != nil && !PresentDemo.passive { demoLog("ignored pill hover inside=\(inside)"); return }
+        if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { demoLog("ignored pill hover inside=\(inside)"); return }
         guard state.pillWidth > 0, !state.expanded, !state.detail else { return }
         withAnimation(Self.pillHoverSpring) { state.pillHover = inside }
     }

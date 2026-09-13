@@ -1,6 +1,15 @@
-# Wishing-Willow
+<p align="center">
+  <img src="docs/media/expand.en.gif" width="680" alt="The notch island unfolds the moment Claude writes how it read the request">
+</p>
 
-**Shows what the model thinks you asked, next to what you actually said.**
+<h1 align="center">Wishing-Willow</h1>
+
+<p align="center">
+  <b>Shows what Claude thinks you asked, next to what you actually said.</b><br>
+  A Claude Code plugin, and a notch island for macOS that puts the two side by side while the turn is still running.
+</p>
+
+<p align="center">English · <a href="README.zh-CN.md">简体中文</a></p>
 
 ```
 你批准的  找这类问题的通用逻辑，要可复用的方案
@@ -9,6 +18,19 @@
 
 It does not score the two. It does not block anything. Nothing leaves your machine.
 Whether they agree is yours to judge — that is the whole design.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/expanded.en.png" alt="Expanded island: your request, Claude's reading, the steps it took and a segmented progress bar"></td>
+    <td width="50%"><img src="docs/media/waiting.en.png" alt="Expanded island while Claude waits for you to pick an option"></td>
+  </tr>
+  <tr>
+    <td><b>Asked for a diagnosis, read as a rewrite.</b> The request said <i>don’t change any code</i>; the reading says <i>rewrite the retry logic</i>. Nothing flags it — you see both lines and decide.</td>
+    <td><b>Claude stopped to ask you something.</b> The island shows the question and the options and sends you back to Claude Code. It never answers for you.</td>
+  </tr>
+</table>
+
+<sub>Every session in these images is made up. They were recorded on a plain backdrop by <a href="macos/scripts/readme-media.sh"><code>macos/scripts/readme-media.sh</code></a>, driving the real plugin hook and the real app.</sub>
 
 ---
 
@@ -45,7 +67,7 @@ Willow covers that gap, and only that gap. It is not a replacement for plan mode
 /plugin install willow@wishing-willow
 ```
 
-**2 — the display** (a plugin cannot ship a `statusLine`; this step is unavoidable)
+**2 — the status line** (a plugin cannot ship a `statusLine`; this step is unavoidable)
 
 ```
 /willow:setup
@@ -55,7 +77,16 @@ It prints a snippet for your `~/.claude/settings.json`. **It does not edit your
 settings for you.** The snippet resolves the installed path at runtime, so a
 plugin update does not blank your status line.
 
-**3 — macOS menu-bar reader** (optional) — see [`macos/`](macos/).
+**3 — the notch island** (optional, macOS)
+
+```bash
+cd macos
+make install        # builds with SwiftPM and copies to /Applications
+open /Applications/WishingWillow.app
+```
+
+Built locally, so there is nothing to sign or notarise: a binary you compiled
+yourself carries no quarantine attribute. Details in [`macos/`](macos/).
 
 ## Requirements
 
@@ -63,19 +94,86 @@ plugin update does not blank your status line.
 - **Node.js** on `PATH` — the hooks are `.mjs` files invoked as `node …`.
   Claude Code ships as a self-contained binary, so having Claude Code is *not*
   evidence you have Node. Check with `node --version`.
+- For the island: macOS 26 or later and a Swift 6.2 toolchain (Xcode 26 or its
+  command-line tools). Screens without a notch get a virtual one of the same width.
 - Tested on macOS. **Windows is untested** — the hook config uses exec form, which
   should be portable, but nobody has run it there.
 
 If Node is missing, the hooks fail as non-blocking errors: Willow won't work, but
 nothing else breaks.
 
+## The notch island
+
+The status line shows the two rows after a turn. The island shows them **while the
+turn is running** — it tails the transcript itself, so the reading appears the
+moment Claude writes it rather than when the turn ends.
+
+<p align="center">
+  <img src="docs/media/compact-running.en.png" width="600" alt="Collapsed island: status icon and clock on the left wing, the turn's tag on the right, a second session as a detached pill">
+  <br>
+  <img src="docs/media/compact-waiting.en.png" width="600" alt="Collapsed island while Claude waits for an answer">
+</p>
+
+**Collapsed**, the island is two wings around the camera. The right wing carries
+the short tag Claude gave the turn. The left wing carries one combined status icon
+and a clock. A second session that has something to say detaches into a small
+pill beside it, the way the Dynamic Island handles two live activities.
+
+**Expanded** — on hover, or by itself when a reading arrives or Claude asks you
+something — it shows three blocks: *Your request* (verbatim, written by the hook,
+out of the model's reach), *Claude's reading*, and *Claude is working*: every tool
+call as a plain-language step, and a progress bar.
+
+| Progress bar | Means |
+|---|---|
+| <img src="docs/media/swatch-before.png" width="14" height="10" alt="purple"> purple | time before Claude wrote its reading |
+| <img src="docs/media/swatch-after.png" width="14" height="10" alt="mint"> mint | time after it wrote the reading |
+| <img src="docs/media/swatch-waiting.png" width="14" height="10" alt="blue"> blue | time spent waiting on you |
+| white knob | the moment the reading was written |
+| hairline gaps | one per tool call |
+
+Underneath: context used against the window, cache hits, output tokens this turn,
+and how many turns in this session came with a reading.
+
+### The left wing, element by element
+
+<p align="center">
+  <img src="docs/media/left-wing-anatomy.en.png" alt="Annotated left wing: arc lit part is context left, dim part is context used, centre symbol is the turn's state, bottom four dots count running sessions, clock">
+</p>
+
+Modelled on the combined status icon of a phone status bar: three shapes, three
+facts. The arc is context left (orange at 20%, red at 10%); the centre symbol is
+the turn's state; the four dots count the Claude Code sessions running right now.
+The drawing is rendered from the real component (`WishingWillow --anatomy <dir>`),
+so it cannot drift from what is on screen.
+
+### Language
+
+The island follows the first language in System Settings — Chinese if it starts
+with `zh`, English otherwise. `WILLOW_LANG=en` or `WILLOW_LANG=zh` overrides it.
+The declaration parser accepts both languages regardless.
+
 ## How it works
+
+```mermaid
+flowchart LR
+  you(["You press Return"]) --> capture["capture.mjs · UserPromptSubmit"]
+  capture -- "your prompt, verbatim" --> state[("~/.claude/willow/session.json")]
+  capture -- "reminder: say how you read it" --> claude["Claude"]
+  claude -- "writes the turn" --> transcript[("transcript .jsonl")]
+  transcript --> extract["extract.mjs · Stop"]
+  extract -- "reading + tag" --> state
+  state --> statusline["statusLine · two rows"]
+  state --> island["Notch island · read-only"]
+  transcript -. "tailed live" .-> island
+```
 
 | | |
 |---|---|
 | `UserPromptSubmit` | Writes your prompt **verbatim** to `~/.claude/willow/<session>.json`. For substantial requests, asks the model to declare how it read you. Short replies, slash commands and acknowledgements are skipped. |
 | `Stop` | Reads the transcript of the turn that just ended and looks for the declaration at the top of the model's messages. Found → records it, along with the short tag. Not found → leaves it `null`. Also prunes state files whose process is gone and that nobody has touched for a week. |
 | `statusLine` | Prints the two rows. |
+| Notch island | Reads the same state files and tails the live transcript. Never writes to `~/.claude/willow/` — even which turns you have seen is kept in Application Support. |
 
 `Stop` hands the hook a field called `last_assistant_message`, which sounds like
 the reply and is not: it is the *last* message of the turn. A turn that calls
@@ -143,6 +241,10 @@ which side of that line it was measured on.
 **It has no idea whether you're drifting productively.** Plenty of turns go somewhere
 you didn't specify and that's fine. The two rows are information, not a verdict.
 
+**It has not shown that it saves turns.** That is the claim worth testing, and the
+turn log below exists to test it. Until that number exists, the honest description
+is: it makes the gap visible sooner.
+
 ## The turn log
 
 Alongside the state file, each session gets `<session>.log.jsonl` — the last
@@ -171,9 +273,10 @@ asked and said nothing.
 No network calls. No telemetry. No model calls. State stays in
 `~/.claude/willow/`: one small JSON per session plus the twenty-turn log, which
 means **your prompts are on disk in a second place**. Nothing reads them unless
-you install the macOS app. Delete the directory any time; the plugin recreates it
-on the next turn. Files whose process is gone and that nobody has touched for a
-week are pruned automatically.
+you install the macOS app, which reads them locally and sends nothing anywhere.
+Delete the directory any time; the plugin recreates it on the next turn. Files
+whose process is gone and that nobody has touched for a week are pruned
+automatically.
 
 Hooks that mishandle input get in the way of real work, so every failure path here
 exits 0 silently — malformed input, missing fields, unwritable directory. The
@@ -186,9 +289,10 @@ and gets out of the way.
 node tests/replay/run.mjs      # behaviour
 node tests/contract/run.mjs    # registration
 node tests/runtime/run.mjs     # field names
+cd macos && swift test         # the island: parsing, focus rules, timeline, status icon, language
 ```
 
-Three gates, because this plugin has now failed twice in ways a single gate
+Three gates for the plugin, because it has now failed twice in ways a single gate
 structurally could not see.
 
 **replay** runs the hooks against recorded turns and checks the resulting state:
@@ -213,6 +317,21 @@ and feeds the hook using *those* names. Fixtures written from the docs cannot
 catch the docs being wrong, because the code was written from the same page.
 With no `claude` on the machine it prints SKIP and counts it separately — a skip
 is not a pass.
+
+The island's Swift parser is pinned to the plugin's with the same replay cases,
+so the two cannot disagree about what counts as a declaration.
+
+## Regenerating the images
+
+```bash
+cd macos && swift build -c release
+.build/release/WishingWillow --anatomy ../docs/media   # the annotated left wing, both languages
+scripts/readme-media.sh                                # stills and GIFs, both languages
+```
+
+The media script needs screen-recording permission and an unlocked screen. It
+first lays a plain backdrop over the area below the notch that it records, so
+nothing else on your desktop ends up in a picture.
 
 ## License
 
