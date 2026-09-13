@@ -54,7 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 样例演示用不落盘的已读记录：先前演示把样例会话标成已读写进了真实的 seen.json，
         // 之后拍收起态时两翼全缩回刘海——拍到的是上一次演示留下的状态。
-        let demo = PresentDemo.seconds != nil && !PresentDemo.real
+        // 录 README 素材（--backdrop）虽然读的是 WILLOW_STATE_DIR 里的虚构会话，打开面板会把它们标成已读——不能写进真实的 seen.json。
+        let demo = PresentDemo.seconds != nil && (!PresentDemo.real || Backdrop.isOn)
         backdrop = Backdrop.show()
         let c = IslandController(store: store, seen: demo ? SeenStore(ephemeral: true) : SeenStore())
         island = c
@@ -66,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + hold / 2) {
                     if CommandLine.arguments.contains("--detail") {
                         c.presentDetail()
-                    } else if !CommandLine.arguments.contains("--pill-cycle") {
+                    } else if !CommandLine.arguments.contains("--pill-cycle") && !CommandLine.arguments.contains("--hover-cycle") {
                         c.presentExpanded()
                     }
                 }
@@ -77,6 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 // --pill-cycle：展开（胶囊吸回岛里）→ 收起（胶囊滴出去）→ 胶囊悬停预览 → 离开 → 岛悬停鼓起 → 复原。
                 // 录第二个会话胶囊的出场、收回与悬停动效。
+                // --hover-cycle：走真实悬停路径——先鼓一下、0.3 秒后展开；2.5 秒后移开收起。录胶囊并入悬停面板的动效。
+                if CommandLine.arguments.contains("--hover-cycle") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { c.presentHover(true) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { c.presentHover(false) }
+                }
                 if CommandLine.arguments.contains("--pill-cycle") {
                     let t0 = 3.5
                     DispatchQueue.main.asyncAfter(deadline: .now() + t0) { c.presentExpanded() }

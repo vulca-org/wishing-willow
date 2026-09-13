@@ -76,6 +76,7 @@ struct StatCell<Accessory: View>: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Ink.tertiary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
             HStack(spacing: 6) {
                 Text(value)
                     .font(Ink.number(12.5, .semibold))
@@ -316,6 +317,8 @@ struct CacheDots: View {
 /// 最下一行是各段时长的图例——颜色和数字挨在一起，不用对着色块去猜。
 struct TurnBar: View {
     let timeline: TurnTimeline
+    /// 图例末尾写不写「回车 / Sent」。点击面板里栏宽窄，只写时刻。
+    var showsSentLabel = true
 
     struct Segment: Equatable {
         enum Kind: Equatable, CaseIterable { case before, after, waiting }
@@ -460,10 +463,13 @@ struct TurnBar: View {
                 .fixedSize()
             }
             Spacer(minLength: 6)
-            Text(L("回车 ", "Sent ") + timeline.startedAt.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)))
+            // 点击面板里栏宽窄，只写时刻（先前截成「Se…」「回车 09:59…」）。
+            let sent = timeline.startedAt.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+            Text(showsSentLabel ? L("回车 ", "Sent ") + sent : sent)
                 .font(Ink.number(10))
                 .foregroundStyle(Ink.tertiary)
                 .lineLimit(1)
+                .fixedSize()
         }
     }
 }

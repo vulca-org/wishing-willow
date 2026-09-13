@@ -18,6 +18,8 @@ final class IslandState {
     var pillWidth: CGFloat = 0
     /// 胶囊离岛的程度：0 = 收在岛里，1 = 停在右侧。出场与收回都走这个值，中间有一段液体连桥。
     var pillOut: CGFloat = 0
+    /// 展开（或打开面板）开始那一刻的岛宽。胶囊并入面板时按它定位，不跟着正在变宽的岛往外走。
+    var pillAnchorWidth: CGFloat = 0
     /// 鼠标停在胶囊上：胶囊向右长出一段，预览那个会话在做什么。
     var pillHover = false
     /// 鼠标刚进灵动岛、还没到展开的 0.3 秒：岛先微微鼓一下，让人知道它接到了。
@@ -58,7 +60,8 @@ struct IslandView: View {
             // 胶囊画在岛的下面：收回时藏进岛里，出场时从岛的右缘滴出去。
             if state.pillWidth > 0, let other = pair.secondary, let pill = FocusRule.pill(other, seen, store) {
                 let par = FocusRule.parallel(store)
-                PillAssembly(islandWidth: state.shapeWidth, pillOut: state.pillOut,
+                PillAssembly(islandWidth: state.shapeWidth, anchorWidth: open ? state.pillAnchorWidth : nil, liquid: !open,
+                             pillOut: state.pillOut,
                              pillExtra: state.pillHover ? IslandController.pillPreview : 0,
                              pillWidth: state.pillWidth, notchHeight: notchHeight,
                              bottomRadius: NotchShape.closed.bottom,
@@ -120,6 +123,12 @@ struct IslandView: View {
 // SwiftUI 只在主线程读写 animatableData；Swift 6 要求把这一点写明。
 struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     var islandWidth: CGFloat
+    /// 岛正在展开时给定：胶囊按展开前的岛宽定位、原地滑进面板底下。
+    /// 先前跟着正在变宽的岛算位置，胶囊被一路往外推，在面板右上角鼓出一块（2026-09-13 逐帧：展开第一帧右缘 +148 px、连续 5 帧左右不对称）。
+    let anchorWidth: CGFloat?
+    /// 只有收起态之间的分离与收回画液体连桥。并入展开面板时不画：连桥层画的是收起态的岛身，
+    /// 和正在长大的面板对不上，它消失那一帧两侧各缩进 23 px。
+    let liquid: Bool
     var pillOut: CGFloat
     var pillExtra: CGFloat
     let pillWidth: CGFloat
@@ -129,10 +138,12 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     let onHover: (Bool) -> Void
     let content: () -> Content
 
-    init(islandWidth: CGFloat, pillOut: CGFloat, pillExtra: CGFloat, pillWidth: CGFloat, notchHeight: CGFloat,
+    init(islandWidth: CGFloat, anchorWidth: CGFloat? = nil, liquid: Bool = true, pillOut: CGFloat, pillExtra: CGFloat, pillWidth: CGFloat, notchHeight: CGFloat,
          bottomRadius: CGFloat, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
          @ViewBuilder content: @escaping () -> Content) {
         self.islandWidth = islandWidth
+        self.anchorWidth = anchorWidth
+        self.liquid = liquid
         self.pillOut = pillOut
         self.pillExtra = pillExtra
         self.pillWidth = pillWidth
@@ -157,12 +168,13 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
             let w = pillWidth + pillExtra
             let h = IslandController.pillHeight
             let mid = g.size.width / 2
-            let tucked = islandWidth / 2 - w / 2 - 8
-            let rest = islandWidth / 2 + IslandController.pillGap + w / 2
+            let base = anchorWidth ?? islandWidth
+            let tucked = base / 2 - w / 2 - 8
+            let rest = base / 2 + IslandController.pillGap + w / 2
             let cx = mid + tucked + (rest - tucked) * pillOut
             let cy = notchHeight / 2
             ZStack(alignment: .topLeading) {
-                if pillOut > 0.02 && pillOut < 0.97 {
+                if liquid && pillOut > 0.02 && pillOut < 0.97 {
                     Canvas { ctx, size in
                         ctx.addFilter(.alphaThreshold(min: 0.5, color: .black))
                         ctx.addFilter(.blur(radius: 4))
@@ -179,7 +191,8 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
                 }
                 // 先前在胶囊后面叠 1–2 层表示还有会话，用户看到的是「重叠」；会话数改由左翼四点表示。
                 content()
-                    .opacity(Double(max(0, min(1, (pillOut - 0.45) / 0.4))))
+                    // 并入面板时字一开始收就淡掉：先前字跟着胶囊滑进岛里，叠在岛的右缘上。
+                    .opacity(Double(max(0, min(1, liquid ? (pillOut - 0.45) / 0.4 : (pillOut - 0.8) / 0.2))))
                     .frame(width: w, height: h)
                     .background(Capsule().fill(Color.black))
                     .contentShape(Capsule())

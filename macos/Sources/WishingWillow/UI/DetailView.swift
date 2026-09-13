@@ -42,7 +42,7 @@ struct DetailView: View {
             ears.reveal(0, shown, after: Self.revealAfter)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: L("会话", "Sessions"), value: L("\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)", "\(par.running) running · \(par.idle) idle · \(sessions.count) total"))
+                    SectionHeader(title: L("会话", "Sessions"), value: L("\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)", "\(par.running) running · \(par.idle) idle"))
                     sessionList.frame(height: min(CGFloat(sessions.count) * 42, 168), alignment: .top)
                     SessionChart(entries: entries, runningSince: running)
                         .frame(maxHeight: .infinity)
@@ -206,7 +206,7 @@ struct DetailView: View {
             if let tl = store.timeline(for: s) {
                 VStack(alignment: .leading, spacing: 8) {
                     if let c = p?.pendingChoice { ChoiceCard(choice: c) }
-                    TurnBar(timeline: tl)
+                    TurnBar(timeline: tl, showsSentLabel: false)
                     if !tl.progress.steps.isEmpty { StepList(timeline: tl, limit: 3) }
                 }
                 .padding(.leading, Self.keyline)
@@ -321,7 +321,7 @@ struct DetailView: View {
                 if let status { CacheDots(hit: status.cacheHit) }
             }
             StatDivider()
-            StatCell(label: status.map { L("本轮输出 · \($0.requests) 次请求", "Output · \($0.requests) requests") } ?? L("本轮输出", "Output this turn"),
+            StatCell(label: status.map { L("输出 · \($0.requests) 次请求", "Output · \($0.requests) req") } ?? L("本轮输出", "Output this turn"),
                      value: status.map { ClaudeStatus.compact($0.outputTokens) } ?? "—")
             StatDivider()
             StatCell(label: L("写了理解", "Readings written"), value: asked.isEmpty ? "—" : L("\(wrote)/\(asked.count) 轮", "\(wrote)/\(asked.count) turns"))
@@ -375,11 +375,11 @@ struct SessionChart: View {
 
     static func name(_ o: Outcome) -> String {
         switch o {
-        case .declared: L("写了理解", "Reading written")
+        case .declared: L("写了理解", "Reading")
         case .flagged: L("自标不一致", "Flagged")
-        case .silent: L("问了没写", "Asked, none written")
+        case .silent: L("问了没写", "No reading")
         case .notAsked: L("没问", "Not asked")
-        case .interrupted: L("被打断", "Interrupted")
+        case .interrupted: L("被打断", "Withdrawn")
         }
     }
 
@@ -413,7 +413,7 @@ struct SessionChart: View {
     private var headline: String {
         let ds = entries.compactMap(\.duration).sorted()
         if ds.isEmpty { return runningSince == nil ? L("还没有记录", "No records yet") : L("这一轮还在进行", "This turn is still running") }
-        return L("\(entries.count) 轮 · 中位 \(DetailView.duration(ds[ds.count / 2])) · 对数纵轴", "\(entries.count) turns · median \(DetailView.duration(ds[ds.count / 2])) · log scale")
+        return L("\(entries.count) 轮 · 中位 \(DetailView.duration(ds[ds.count / 2])) · 对数纵轴", "\(entries.count) turns · median \(DetailView.duration(ds[ds.count / 2]))")
     }
 
     private var slots: Int { entries.count + (runningSince == nil ? 0 : 1) }
@@ -476,7 +476,7 @@ struct SessionChart: View {
         let n = counts[o] ?? 0
         return HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 1.5, style: .continuous).fill(Self.color(o)).frame(width: 7, height: 7)
-            Text(Self.name(o)).font(.system(size: 10)).foregroundStyle(n > 0 ? Ink.secondary : Ink.tertiary).lineLimit(1)
+            Text(Self.name(o)).font(.system(size: 10)).foregroundStyle(n > 0 ? Ink.secondary : Ink.tertiary).lineLimit(1).minimumScaleFactor(0.85)
             Spacer(minLength: 2)
             Text("\(n)").font(Ink.number(10, .semibold)).foregroundStyle(n > 0 ? Ink.primary : Ink.quaternary)
         }

@@ -73,6 +73,9 @@ final class IslandController {
     /// 胶囊滴出去：有回弹，连桥拉长再断开；收回：不回弹，干脆地吸回岛里。
     static let pillOutSpring = Animation.spring(response: 0.52, dampingFraction: 0.64)
     static let pillInSpring = Animation.spring(response: 0.3, dampingFraction: 0.92)
+    /// 并入展开面板：比面板长大快（面板宽走 0.34 的弹簧），胶囊始终藏在面板底下。
+    /// 用 pillInSpring 时胶囊比面板慢，右上角露出一块圆头 3–4 帧（2026-09-13 逐帧）。
+    static let pillMerge = Animation.easeOut(duration: 0.14)
     static let pillHoverSpring = Animation.spring(response: 0.34, dampingFraction: 0.74)
     /// 悬停要停够这么久才展开（boring.notch 的 minimumHoverDuration）：鼠标只是去点菜单栏时路过，不弹。
     static let hoverDelay: TimeInterval = 0.3
@@ -229,7 +232,7 @@ final class IslandController {
 
     /// 胶囊出场：先在岛里就位（不动画），下一拍再弹出来；退场：弹回岛里，停稳后再撤掉。
     /// delay：岛刚开始收起时等它收稳再滴出去，否则胶囊和正在缩小的岛挤在一起。
-    private func updatePill(animated: Bool, delay: TimeInterval = 0) {
+    private func updatePill(animated: Bool, delay: TimeInterval = 0, retract: Animation = IslandController.pillInSpring) {
         let want = pillWidth()
         guard animated else {
             pillEmerge?.cancel(); pillEmerge = nil
@@ -264,7 +267,7 @@ final class IslandController {
         } else if state.pillWidth > 0 {
             pillEmerge?.cancel(); pillEmerge = nil
             guard pillRetract == nil else { return }
-            withAnimation(Self.pillInSpring) {
+            withAnimation(retract) {
                 state.pillOut = 0
                 state.pillHover = false
             }
@@ -287,7 +290,7 @@ final class IslandController {
     }
 
     /// 按内容量出展开高度，上下限兜住极端情况。
-    private func expandedHeight() -> CGFloat {
+    private func expandedHeight(expanded: Bool = true) -> CGFloat {
         let g = notchGeometry()
         let probe = NSHostingController(rootView:
             IslandExpandedContent(store: store, seen: seen, pinned: state.pinned,
@@ -310,6 +313,11 @@ final class IslandController {
         // 忽略，但记下来——被忽略的事件本身就是证据。
         // 录 README 素材（--backdrop）时也不理悬停：真人鼠标经过会把要拍的展开态收掉——2026-09-13 英文两张静帧就这样拍成了收起态。
         if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { demoLog("ignored hover inside=\(inside)"); return }
+        hoverBody(inside, force: false)
+    }
+
+    /// 悬停的实际处理。force：演示用，不看鼠标实际在不在形状里——录「悬停展开」动效时鼠标不在那儿。
+    private func hoverBody(_ inside: Bool, force: Bool) {
         if state.detail { return }                          // 面板打开时悬停不收放
         hoverIntent?.cancel()
         if inside {
@@ -319,7 +327,7 @@ final class IslandController {
                 morph(to: targetShapeSize(expanded: false), .hover)
             }
             let work = DispatchWorkItem { [weak self] in
-                guard let self, self.shapeScreenRect().insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
+                guard let self, force || self.shapeScreenRect().insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
                 self.autoCollapse?.invalidate()
                 // 钉住收起态正在显示的那个会话：展开的必须是你刚才看到的那个（HIG：展开态是放大的收起态）。
                 if let f = FocusRule.pair(self.store, self.seen, pinned: self.state.pinned).primary {
@@ -334,7 +342,7 @@ final class IslandController {
             // 展开时形状在鼠标下面变大，会误报一次「离开」。等一拍再看鼠标还在不在形状里。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self else { return }
-                guard !self.shapeScreenRect().insetBy(dx: -1, dy: -1).contains(NSEvent.mouseLocation) else { return }
+                guard force || !self.shapeScreenRect().insetBy(dx: -1, dy: -1).contains(NSEvent.mouseLocation) else { return }
                 if self.state.expanded {
                     self.setExpanded(false, reason: "hover-out")
                 } else if self.state.hovering {
@@ -424,13 +432,20 @@ final class IslandController {
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
         if !on { afterCollapse(pin: state.pinned) }
+        // 先量尺寸、再开动画。量一次要建一整棵展开态视图（实测约 30 ms）；放在动画开始之后，
+        // 这段时间算进弹簧里，第一帧就跳一大截。
+        let measureStart = Date()
+        let target = on ? CGSize(width: Self.expandedWidth + 2 * NotchShape.open.top, height: expandedHeight(expanded: true))
+                        : targetShapeSize(expanded: false)
+        demoLog("measure \(Int(Date().timeIntervalSince(measureStart) * 1000))ms")
+        if on { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(on ? Self.openWidth : Self.closeHeight) {
             state.expanded = on
             state.hovering = false
         }
-        morph(to: targetShapeSize(expanded: on), on ? .open : .close)
+        morph(to: target, on ? .open : .close)
         // 展开时胶囊立刻吸回岛里；收起时等岛收稳（约 0.3 秒）再滴出去。
-        updatePill(animated: true, delay: on ? 0 : 0.3)
+        updatePill(animated: true, delay: on ? 0 : 0.3, retract: on ? Self.pillMerge : Self.pillInSpring)
     }
 
     /// 收起动画走完之后：松开钉住（立刻松开的话，收起途中内容会跳成另一个会话），再轮到排队的下一个。
@@ -459,13 +474,14 @@ final class IslandController {
         hoverIntent?.cancel()
         for s in store.sessions { seen.markSeen(s) }
         demoLog("detail=true")
+        if !state.expanded { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(Self.openWidth) {
             state.detail = true
             state.expanded = true
             state.hovering = false
         }
         morph(to: DetailView.size, .open)
-        updatePill(animated: true)
+        updatePill(animated: true, retract: Self.pillMerge)
         installOutsideMonitor()
     }
 
@@ -499,6 +515,9 @@ final class IslandController {
 
     /// 演示用：直接打开点击后的面板。
     func presentDetail() { openDetail() }
+
+    /// 演示用：走真实悬停路径（先鼓一下、hoverDelay 后展开；移开后收起），不看鼠标位置。
+    func presentHover(_ inside: Bool) { hoverBody(inside, force: true) }
 
     func presentExpanded() {
         store.reload()

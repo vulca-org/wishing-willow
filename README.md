@@ -135,6 +135,23 @@ call as a plain-language step, and a progress bar.
 Underneath: context used against the window, cache hits, output tokens this turn,
 and how many turns in this session came with a reading.
 
+### Click for the panel
+
+<p align="center">
+  <img src="docs/media/open-detail.en.gif" width="700" alt="Click the island: it grows into a panel of sessions and recent turns">
+</p>
+
+Click the island and it grows into a panel. On top, every open session;
+below, the recent turns of the one you pick — what you asked, how Claude read it,
+the tag, how long the turn took. Turns where Claude flagged its own reading with ⚠,
+turns where it was asked and wrote nothing, and turns the plugin never asked about
+are kept apart rather than folded into one colour, and a chart lays out how long
+each turn ran. Click anywhere outside to close it.
+
+<p align="center">
+  <img src="docs/media/detail.en.png" width="700" alt="The panel: sessions, recent turns with their readings, and a chart of turn durations">
+</p>
+
 ### The left wing, element by element
 
 <p align="center">
