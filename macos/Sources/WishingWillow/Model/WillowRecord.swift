@@ -115,7 +115,7 @@ enum PromptSource {
 
     static func describe(_ prompt: String?) -> String {
         let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return p.hasPrefix("<task-notification") ? "后台任务通知" : "系统消息"
+        return p.hasPrefix("<task-notification") ? L("后台任务通知", "background task notice") : L("系统消息", "system message")
     }
 }
 

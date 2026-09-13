@@ -8,6 +8,8 @@ import Foundation
 @MainActor
 @Suite("这一轮的时间线")
 struct TimelineTests {
+    init() { Lang.current = .zh }
+
     private let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
 
     private func append(_ url: URL, _ line: String) throws {

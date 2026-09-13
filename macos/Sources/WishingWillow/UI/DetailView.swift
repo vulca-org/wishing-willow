@@ -42,7 +42,7 @@ struct DetailView: View {
             ears.reveal(0, shown, after: Self.revealAfter)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "会话", value: "\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)")
+                    SectionHeader(title: L("会话", "Sessions"), value: L("\(par.running) 在跑 · \(par.idle) 空闲 · 共 \(sessions.count)", "\(par.running) running · \(par.idle) idle · \(sessions.count) total"))
                     sessionList.frame(height: min(CGFloat(sessions.count) * 42, 168), alignment: .top)
                     SessionChart(entries: entries, runningSince: running)
                         .frame(maxHeight: .infinity)
@@ -52,7 +52,7 @@ struct DetailView: View {
                 .reveal(1, shown, after: Self.revealAfter)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    SectionHeader(title: "轮次", value: rangeNote(entries))
+                    SectionHeader(title: L("轮次", "Turns"), value: rangeNote(entries))
                     turnList(entries)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -76,7 +76,7 @@ struct DetailView: View {
     private var ears: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
-                Text("最近的轮次").font(.system(size: 12, weight: .semibold))
+                Text(L("最近的轮次", "Recent turns")).font(.system(size: 12, weight: .semibold))
                 DemoMark()
                 Spacer(minLength: 0)
             }
@@ -94,7 +94,7 @@ struct DetailView: View {
                 Spacer(minLength: 4)
                 if let onClose {
                     Button(action: onClose) {
-                        Text("收起")
+                        Text(L("收起", "Close"))
                             .font(.system(size: 11, weight: .medium))
                             .padding(.horizontal, 10).padding(.vertical, 3)
                             .background(Color.white.opacity(0.12), in: Capsule())
@@ -124,7 +124,7 @@ struct DetailView: View {
     private func sessionRow(_ s: SessionState, dupes: Set<String>) -> some View {
         let selected = s.id == current?.id
         // 进行中的一轮：状态文件里还没有标签（整轮结束才写），实时读到的先用上。
-        let title = store.progress(for: s)?.tag ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? "还没有标签"
+        let title = store.progress(for: s)?.tag ?? s.tag ?? FocusRule.lastLoggedTag(s, store) ?? L("还没有标签", "No tag yet")
         let sub = s.record.updatedAt.map { "\(s.workspace) · \(Self.ago($0))" } ?? s.workspace
         return HStack(alignment: .center, spacing: 8) {
             Circle().fill(dotColor(s)).frame(width: 7, height: 7)
@@ -164,7 +164,7 @@ struct DetailView: View {
     private func rangeNote(_ entries: [TurnLogEntry]) -> String? {
         let times = entries.compactMap(\.at)
         guard let first = times.min(), let last = times.max() else { return nil }
-        return "\(IslandExpandedContent.clock(first))–\(IslandExpandedContent.clock(last)) · \(entries.count) 轮"
+        return "\(IslandExpandedContent.clock(first))–\(IslandExpandedContent.clock(last)) · " + L("\(entries.count) 轮", "\(entries.count) turns")
     }
 
     private func turnList(_ entries: [TurnLogEntry]) -> some View {
@@ -179,7 +179,7 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let s = live { liveRow(s) }
                 if history.isEmpty && live == nil {
-                    Text("这个会话还没有记录下来的轮次。")
+                    Text(L("这个会话还没有记录下来的轮次。", "No turns recorded for this session yet."))
                         .font(.system(size: 12)).foregroundStyle(Ink.tertiary).padding(.top, 6)
                 }
                 ForEach(history) { t in turnRow(t) }
@@ -190,18 +190,18 @@ struct DetailView: View {
     private func liveRow(_ s: SessionState) -> some View {
         let p = store.progress(for: s)
         return VStack(alignment: .leading, spacing: 5) {
-            rowHeader(time: s.record.updatedAt, tag: p?.tag ?? s.tag, badge: "进行中", expandable: false, open: true) {
+            rowHeader(time: s.record.updatedAt, tag: p?.tag ?? s.tag, badge: L("进行中", "Live"), expandable: false, open: true) {
                 if let start = s.record.updatedAt { LiveClock(since: start, size: 11, opacity: 0.45) }
             }
             if s.record.isSystemMessage {
-                line("要求", "系统消息（\(PromptSource.describe(s.prompt))），不是你说的", Ink.tertiary, open: true)
+                line(L("要求", "Asked"), L("系统消息（\(PromptSource.describe(s.prompt))），不是你说的", "System message (\(PromptSource.describe(s.prompt))) — not from you"), Ink.tertiary, open: true)
             } else {
-                line("要求", s.prompt ?? "—", Ink.primary, open: true)
+                line(L("要求", "Asked"), s.prompt ?? "—", Ink.primary, open: true)
             }
             if let d = p?.decode {
-                line("理解", d, d.hasPrefix("⚠") ? .orange : Ink.primary, open: true)
+                line(L("理解", "Read"), d, d.hasPrefix("⚠") ? .orange : Ink.primary, open: true)
             } else {
-                line("理解", IslandExpandedContent.phase(p), Ink.tertiary, open: true)
+                line(L("理解", "Read"), IslandExpandedContent.phase(p), Ink.tertiary, open: true)
             }
             if let tl = store.timeline(for: s) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -221,16 +221,16 @@ struct DetailView: View {
         let open = openRows.contains(t.id)
         let expandable = (t.prompt?.count ?? 0) > 36 || (t.decode?.count ?? 0) > 36
         return VStack(alignment: .leading, spacing: 4) {
-            rowHeader(time: t.at, tag: t.tag, badge: t.interrupted == true ? "被打断" : nil,
+            rowHeader(time: t.at, tag: t.tag, badge: t.interrupted == true ? L("被打断", "Interrupted") : nil,
                       expandable: expandable, open: open) {
                 if let d = t.duration, d >= 1 {
                     Text(Self.duration(d)).font(Ink.number(11)).foregroundStyle(Ink.tertiary)
                 }
             }
             if t.isSystemMessage {
-                line("要求", "系统消息（\(PromptSource.describe(t.prompt))），不是你说的", Ink.tertiary, open: open)
+                line(L("要求", "Asked"), L("系统消息（\(PromptSource.describe(t.prompt))），不是你说的", "System message (\(PromptSource.describe(t.prompt))) — not from you"), Ink.tertiary, open: open)
             } else {
-                line("要求", t.prompt ?? "—", Ink.primary, open: open)
+                line(L("要求", "Asked"), t.prompt ?? "—", Ink.primary, open: open)
             }
             decodeLine(t, open: open)
         }
@@ -276,15 +276,15 @@ struct DetailView: View {
     @ViewBuilder
     private func decodeLine(_ t: TurnLogEntry, open: Bool) -> some View {
         if t.declared {
-            line("理解", t.decode ?? "", t.flaggedByModel ? .orange : Ink.primary, open: open)
+            line(L("理解", "Read"), t.decode ?? "", t.flaggedByModel ? .orange : Ink.primary, open: open)
         } else if t.interrupted == true {
-            line("理解", "被打断，没来得及写", Ink.tertiary, open: open)
+            line(L("理解", "Read"), L("被打断，没来得及写", "Interrupted before one was written"), Ink.tertiary, open: open)
         } else if t.reminded == true {
-            line("理解", "问了，Claude 没写理解", .orange, open: open)
+            line(L("理解", "Read"), L("问了，Claude 没写理解", "Asked, but Claude wrote no reading"), .orange, open: open)
         } else if t.reminded == false {
-            line("理解", "这一轮没问（太短或是系统消息）", Ink.tertiary, open: open)
+            line(L("理解", "Read"), L("这一轮没问（太短或是系统消息）", "Not asked (too short, or a system message)"), Ink.tertiary, open: open)
         } else {
-            line("理解", "不知道这一轮问没问", Ink.tertiary, open: open)
+            line(L("理解", "Read"), L("不知道这一轮问没问", "Unknown whether this turn was asked"), Ink.tertiary, open: open)
         }
     }
 
@@ -311,22 +311,22 @@ struct DetailView: View {
         let wrote = asked.filter(\.declared).count
         let longest = entries.compactMap(\.duration).max()
         return HStack(spacing: 0) {
-            StatCell(label: status.map { "上下文 · \(ClaudeStatus.compact($0.contextUsed))/\(ClaudeStatus.compact($0.window))" } ?? "上下文",
+            StatCell(label: status.map { L("上下文 · \(ClaudeStatus.compact($0.contextUsed))/\(ClaudeStatus.compact($0.window))", "Context · \(ClaudeStatus.compact($0.contextUsed))/\(ClaudeStatus.compact($0.window))") } ?? L("上下文", "Context"),
                      value: status.map { IslandExpandedContent.percent($0.usedFraction) } ?? "—",
                      tint: status.map { DuoGlyph.ringColor($0.remaining) } ?? Ink.tertiary) {
                 if let status { ContextGauge(used: status.usedFraction) }
             }
             StatDivider()
-            StatCell(label: "缓存命中", value: status.map { IslandExpandedContent.percent($0.cacheHit) } ?? "—") {
+            StatCell(label: L("缓存命中", "Cache hits"), value: status.map { IslandExpandedContent.percent($0.cacheHit) } ?? "—") {
                 if let status { CacheDots(hit: status.cacheHit) }
             }
             StatDivider()
-            StatCell(label: status.map { "本轮输出 · \($0.requests) 次请求" } ?? "本轮输出",
+            StatCell(label: status.map { L("本轮输出 · \($0.requests) 次请求", "Output · \($0.requests) requests") } ?? L("本轮输出", "Output this turn"),
                      value: status.map { ClaudeStatus.compact($0.outputTokens) } ?? "—")
             StatDivider()
-            StatCell(label: "写了理解", value: asked.isEmpty ? "—" : "\(wrote)/\(asked.count) 轮")
+            StatCell(label: L("写了理解", "Readings written"), value: asked.isEmpty ? "—" : L("\(wrote)/\(asked.count) 轮", "\(wrote)/\(asked.count) turns"))
             StatDivider()
-            StatCell(label: "最长一轮", value: longest.map(Self.duration) ?? "—")
+            StatCell(label: L("最长一轮", "Longest turn"), value: longest.map(Self.duration) ?? "—")
         }
         .fixedSize(horizontal: false, vertical: true)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Ink.fill))
@@ -342,18 +342,18 @@ struct DetailView: View {
 
     static func duration(_ d: TimeInterval) -> String {
         let s = Int(d.rounded())
-        if s < 60 { return "\(s) 秒" }
+        if s < 60 { return L("\(s) 秒", "\(s)s") }
         let m = s / 60, r = s % 60
-        if m < 60 { return r == 0 ? "\(m) 分" : "\(m) 分 \(r) 秒" }
-        return "\(m / 60) 小时 \(m % 60) 分"
+        if m < 60 { return r == 0 ? L("\(m) 分", "\(m)m") : L("\(m) 分 \(r) 秒", "\(m)m \(r)s") }
+        return L("\(m / 60) 小时 \(m % 60) 分", "\(m / 60)h \(m % 60)m")
     }
 
     static func ago(_ date: Date) -> String {
         let s = Int(Date().timeIntervalSince(date))
-        if s < 60 { return "刚刚" }
-        if s < 3600 { return "\(s / 60) 分钟前" }
-        if s < 86400 { return "\(s / 3600) 小时前" }
-        return "\(s / 86400) 天前"
+        if s < 60 { return L("刚刚", "just now") }
+        if s < 3600 { return L("\(s / 60) 分钟前", "\(s / 60)m ago") }
+        if s < 86400 { return L("\(s / 3600) 小时前", "\(s / 3600)h ago") }
+        return L("\(s / 86400) 天前", "\(s / 86400)d ago")
     }
 }
 
@@ -375,11 +375,11 @@ struct SessionChart: View {
 
     static func name(_ o: Outcome) -> String {
         switch o {
-        case .declared: "写了理解"
-        case .flagged: "自标不一致"
-        case .silent: "问了没写"
-        case .notAsked: "没问"
-        case .interrupted: "被打断"
+        case .declared: L("写了理解", "Reading written")
+        case .flagged: L("自标不一致", "Flagged")
+        case .silent: L("问了没写", "Asked, none written")
+        case .notAsked: L("没问", "Not asked")
+        case .interrupted: L("被打断", "Interrupted")
         }
     }
 
@@ -400,7 +400,7 @@ struct SessionChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("各轮时长").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.secondary)
+                Text(L("各轮时长", "Turn durations")).font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.secondary)
                 Text(headline).font(Ink.number(10.5)).foregroundStyle(Ink.tertiary).lineLimit(1)
             }
             chart.frame(minHeight: 60, maxHeight: .infinity)
@@ -412,8 +412,8 @@ struct SessionChart: View {
 
     private var headline: String {
         let ds = entries.compactMap(\.duration).sorted()
-        if ds.isEmpty { return runningSince == nil ? "还没有记录" : "这一轮还在进行" }
-        return "\(entries.count) 轮 · 中位 \(DetailView.duration(ds[ds.count / 2])) · 对数纵轴"
+        if ds.isEmpty { return runningSince == nil ? L("还没有记录", "No records yet") : L("这一轮还在进行", "This turn is still running") }
+        return L("\(entries.count) 轮 · 中位 \(DetailView.duration(ds[ds.count / 2])) · 对数纵轴", "\(entries.count) turns · median \(DetailView.duration(ds[ds.count / 2])) · log scale")
     }
 
     private var slots: Int { entries.count + (runningSince == nil ? 0 : 1) }
@@ -423,15 +423,15 @@ struct SessionChart: View {
             let barWidth: CGFloat = slots > 12 ? 5 : 9
             Chart {
                 ForEach(Array(entries.enumerated()), id: \.offset) { i, e in
-                    BarMark(x: .value("轮", Double(i)),
-                            yStart: .value("秒", 1.0), yEnd: .value("秒", Self.seconds(e.duration)),
+                    BarMark(x: .value(L("轮", "Turn"), Double(i)),
+                            yStart: .value(L("秒", "Seconds"), 1.0), yEnd: .value(L("秒", "Seconds"), Self.seconds(e.duration)),
                             width: .fixed(barWidth))
                         .foregroundStyle(Self.color(Self.outcome(e)))
                         .cornerRadius(2)
                 }
                 if let since = runningSince {
-                    BarMark(x: .value("轮", Double(entries.count)),
-                            yStart: .value("秒", 1.0), yEnd: .value("秒", Self.seconds(ctx.date.timeIntervalSince(since))),
+                    BarMark(x: .value(L("轮", "Turn"), Double(entries.count)),
+                            yStart: .value(L("秒", "Seconds"), 1.0), yEnd: .value(L("秒", "Seconds"), Self.seconds(ctx.date.timeIntervalSince(since))),
                             width: .fixed(barWidth))
                         .foregroundStyle(Color.white.opacity(0.25))
                         .cornerRadius(2)
@@ -445,7 +445,7 @@ struct SessionChart: View {
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Ink.separator)
                     AxisValueLabel {
                         if let d = v.as(Double.self) {
-                            Text(d < 2 ? "1秒" : (d < 100 ? "1分" : "1时"))
+                            Text(d < 2 ? L("1秒", "1s") : (d < 100 ? L("1分", "1m") : L("1时", "1h")))
                                 .font(.system(size: 9))
                                 .foregroundStyle(Ink.tertiary)
                         }

@@ -52,7 +52,7 @@ final class IslandController {
     static let maxExpandedHeight: CGFloat = 470
     static let pillHeight: CGFloat = 24
     static let pillGap: CGFloat = 6
-    static let pillMax: CGFloat = 96
+    static let pillMax: CGFloat = 120
     /// 鼠标停在胶囊上时向右长出的宽度，用来放那个会话的标签。
     static let pillPreview: CGFloat = 130     // 标签 + 「· 共 N 个」
     /// 悬停那 0.3 秒里岛先鼓起多少。
@@ -156,8 +156,8 @@ final class IslandController {
     private func pillWidth() -> CGFloat {
         guard !state.expanded, !state.detail else { return 0 }
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
-        guard let other = pair.secondary, FocusRule.pill(other, seen, store) != nil else { return 0 }
-        return 76     // 还有更多会话时在胶囊后面叠层，不再加宽写「+N」
+        guard let other = pair.secondary, let pill = FocusRule.pill(other, seen, store) else { return 0 }
+        return min(Self.pillMax, SessionPill.width(pill))
     }
 
     /// 舞台固定大小：装得下点击面板、最高的展开态、带胶囊（含悬停预览）的收起态，外加阴影。

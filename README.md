@@ -41,7 +41,7 @@ Willow covers that gap, and only that gap. It is not a replacement for plan mode
 **1 — the plugin** (hooks start working immediately)
 
 ```
-/plugin marketplace add vulca-org/wishing-willow
+/plugin marketplace add yha9806/wishing-willow
 /plugin install willow@wishing-willow
 ```
 

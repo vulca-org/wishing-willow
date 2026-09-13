@@ -11,6 +11,10 @@ enum Main {
             let out = i + 1 < args.count ? args[i + 1] : "snapshots"
             exit(Snapshot.run(outputDirectory: out))
         }
+        // --anatomy <目录>：导出左翼状态的工程标注图（中英各一张），给 README 与设计评审用。
+        if let i = args.firstIndex(of: "--anatomy") {
+            exit(Anatomy.run(outputDirectory: i + 1 < args.count ? args[i + 1] : "anatomy"))
+        }
         if let i = args.firstIndex(of: "--selfshot") {
             SelfShot.run(outputDirectory: i + 1 < args.count ? args[i + 1] : "selfshots")
             return

@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("实时读这一轮")
 struct TranscriptTailTests {
+    init() { Lang.current = .zh }
+
     static let casesDir = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()   // WishingWillowTests
         .deletingLastPathComponent()   // Tests

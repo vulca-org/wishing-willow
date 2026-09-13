@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("会话排序、钉住与续接")
 struct StoreOrderingTests {
+    init() { Lang.current = .zh }
+
     private let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
 
     private func makeDir() throws -> URL {

@@ -10,6 +10,8 @@ import Foundation
 @MainActor
 @Suite("token 状态")
 struct TokenStatusTests {
+    init() { Lang.current = .zh }
+
     private func row(_ id: String, input: Int, write: Int, read: Int, output: Int, model: String = "claude-opus-5") -> [String: Any] {
         ["type": "assistant", "timestamp": "2026-09-12T10:00:00.000Z",
          "message": ["id": id, "model": model,

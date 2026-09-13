@@ -123,7 +123,7 @@ struct TurnProgress: Sendable, Equatable {
                 .split(separator: "\n")
                 .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespaces)) }
                 .first { !$0.isEmpty }
-            pendingChoice = Choice(id: id, kind: .plan, at: at, header: "计划", question: title, options: [], count: 1)
+            pendingChoice = Choice(id: id, kind: .plan, at: at, header: L("计划", "Plan"), question: title, options: [], count: 1)
         default:
             break
         }
@@ -197,15 +197,15 @@ enum TranscriptTail {
         func base(_ p: String?) -> String? { p.map { ($0 as NSString).lastPathComponent } }
         let text: String
         switch tool {
-        case "Bash": text = str("description") ?? "运行命令"
-        case "Read": text = "读 " + (base(str("file_path")) ?? "文件")
+        case "Bash": text = str("description") ?? L("运行命令", "Run a command")
+        case "Read": text = L("读 ", "Read ") + (base(str("file_path")) ?? L("文件", "a file"))
         case "Edit", "Write", "MultiEdit", "NotebookEdit":
-            text = "改 " + (base(str("file_path") ?? str("notebook_path")) ?? "文件")
-        case "Grep", "Glob": text = str("pattern").map { "找 " + $0 } ?? "搜索文件"
-        case "WebSearch": text = str("query").map { "搜 " + $0 } ?? "联网搜索"
-        case "WebFetch": text = "取 " + (str("url").flatMap { URL(string: $0)?.host } ?? "网页")
-        case "Agent", "Task": text = str("description") ?? "派子代理"
-        case "ToolSearch": text = "加载工具"
+            text = L("改 ", "Edit ") + (base(str("file_path") ?? str("notebook_path")) ?? L("文件", "a file"))
+        case "Grep", "Glob": text = str("pattern").map { L("找 ", "Find ") + $0 } ?? L("搜索文件", "Search files")
+        case "WebSearch": text = str("query").map { L("搜 ", "Search ") + $0 } ?? L("联网搜索", "Web search")
+        case "WebFetch": text = L("取 ", "Fetch ") + (str("url").flatMap { URL(string: $0)?.host } ?? L("网页", "a page"))
+        case "Agent", "Task": text = str("description") ?? L("派子代理", "Run a subagent")
+        case "ToolSearch": text = L("加载工具", "Load tools")
         default:
             text = tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool
         }

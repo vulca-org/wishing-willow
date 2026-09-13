@@ -142,7 +142,7 @@ final class StatusItemController: NSResponder {
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
-        w.title = "许愿柳"
+        w.title = L("许愿柳", "Wishing Willow")
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
         w.center()

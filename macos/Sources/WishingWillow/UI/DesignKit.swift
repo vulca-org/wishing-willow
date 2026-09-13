@@ -162,15 +162,21 @@ enum DuoGeometry {
     static let symbolRatio: CGFloat = 0.42
     /// 弧从左下端起、顺时针经过顶部到右下端。SwiftUI 的 trim 从 3 点钟方向起算，正下方是 90°。
     static var arcStartDegrees: Double { 90 + (360 - arcSpan) / 2 }
+
+    /// 底部四点亮几个：并行在跑的 Claude Code 会话数，满 4 表示 4 个及以上。
+    /// 先前是缓存命中率——数据准，但对用户没有可操作的含义（用户 2026-09-13 选定改为会话数）。
+    static func litDots(running: Int) -> Int { min(4, max(0, running)) }
 }
 
 /// 折叠态左翼的合一状态图标，照 iPhone Duo 角落里那个圆画：外圈弧、底部四点、圆心符号，三种形状各走一个视觉通道。
 /// - 外圈弧：上下文还剩多少（像电量；剩 20% 变橙、10% 变红）。没有 token 数据时只画暗轨道，不假装知道；
-/// - 底部四点：最近一次请求的缓存命中（像信号格）；
+/// - 底部四点：几个 Claude Code 会话在跑（像信号格那样计数，满 4 = 4 个及以上）；
 /// - 圆心：状态符号（StatusCenter）；在跑时是 Wi-Fi 扇形，最近一次写入越近越满。换符号时用 SF Symbols 的替换动效。
 struct DuoGlyph: View {
     var snapshot: ClaudeStatus.Snapshot?
     let center: StatusCenter
+    /// 并行在跑的会话数（含这一个）。
+    var sessions: Int = 1
     var size: CGFloat = 18
 
     var body: some View {
@@ -189,7 +195,7 @@ struct DuoGlyph: View {
         let dot = max(1.6, size * DuoGeometry.dotSizeRatio)
         let r = size / 2 - dot / 2
         let span = DuoGeometry.arcSpan / 360
-        let lit = snapshot.map { ClaudeStatus.dots(cacheHit: $0.cacheHit) } ?? 0
+        let lit = DuoGeometry.litDots(running: sessions)
         let symbol = Self.symbol(center, live: live)
         return ZStack {
             Circle()
@@ -241,9 +247,11 @@ struct DuoGlyph: View {
     }
 
     private var summary: String {
-        guard let s = snapshot else { return "还没有这一轮的 token 数据" }
-        return "上下文剩 \(Int((s.remaining * 100).rounded()))%（已用 \(ClaudeStatus.compact(s.contextUsed)) / \(ClaudeStatus.compact(s.window))）"
-            + " · 缓存命中 \(Int((s.cacheHit * 100).rounded()))% · 本轮输出 \(ClaudeStatus.compact(s.outputTokens))"
+        let running = L("\(sessions) 个会话在跑", "\(sessions) session\(sessions == 1 ? "" : "s") running")
+        guard let s = snapshot else { return L("还没有这一轮的 token 数据", "No token data for this turn yet") + " · " + running }
+        return L("上下文剩 \(Int((s.remaining * 100).rounded()))%（已用 \(ClaudeStatus.compact(s.contextUsed)) / \(ClaudeStatus.compact(s.window))）",
+                 "Context \(Int((s.remaining * 100).rounded()))% left (\(ClaudeStatus.compact(s.contextUsed)) of \(ClaudeStatus.compact(s.window)) used)")
+            + " · " + running
     }
 }
 
@@ -255,9 +263,9 @@ struct DemoMark: View {
 
     var body: some View {
         if PresentDemo.seconds != nil, compact {
-            Circle().fill(Color.yellow).frame(width: 6, height: 6).help("演示数据")
+            Circle().fill(Color.yellow).frame(width: 6, height: 6).help(L("演示数据", "Demo data"))
         } else if PresentDemo.seconds != nil {
-            Text("演示")
+            Text(L("演示", "Demo"))
                 .font(.system(size: 9, weight: .bold))
                 .padding(.horizontal, 5).padding(.vertical, 1.5)
                 .background(Color.yellow, in: Capsule())
@@ -298,14 +306,18 @@ struct CacheDots: View {
     }
 }
 
-/// 这一轮的进度条：一根胶囊，分段着色，两端写起止时间。Apple 的做法（音乐的播放进度条、屏幕使用时间的分段条），
-/// 不画刻度——精确的数写在分节标题右侧。
-/// 灰 = 按回车到写出理解；白 = 写出理解之后；蓝 = Claude 在等你选择。白色圆点是写出理解的那一刻，细缝是每一次工具调用。
+/// 这一轮的进度条。
+///
+/// 用户对前两版的评价：尺寸线式刻度尺「信息、刻度不错，视觉效果不好」；分段胶囊「颜色应该有区分」。
+/// 这一版把两者合起来：上面是一根分段胶囊，三段用三种色相拉开（Apple 暗色系统色）——
+/// 紫 = 按回车到写出理解、薄荷绿 = 写出理解之后、蓝 = Claude 在等你回应；段与段之间留 1pt 缝，
+/// 工具调用是段内的细缝，白色圆点是写出理解的那一刻。下面是主次刻度和时间标注，右端是「现在 / 结束 / 撤回」。
+/// 最下一行是各段时长的图例——颜色和数字挨在一起，不用对着色块去猜。
 struct TurnBar: View {
     let timeline: TurnTimeline
 
     struct Segment: Equatable {
-        enum Kind: Equatable { case before, after, waiting }
+        enum Kind: Equatable, CaseIterable { case before, after, waiting }
         let kind: Kind
         let from: Double
         let to: Double
@@ -332,62 +344,125 @@ struct TurnBar: View {
         return out
     }
 
-    var body: some View {
-        if let end = timeline.endedAt {
-            bar(now: end)
-        } else {
-            TimelineView(.periodic(from: .now, by: 1)) { ctx in bar(now: ctx.date) }
-        }
-    }
-
-    private func bar(now: Date) -> some View {
-        let segs = Self.segments(timeline, now: now)
-        let steps = timeline.progress.steps.suffix(80).compactMap { Self.fraction($0.at, timeline, now: now) }
-        let decl = Self.fraction(timeline.progress.declaredAt, timeline, now: now)
-        let total = max(now.timeIntervalSince(timeline.startedAt), 0)
-        let endWord = timeline.progress.interruptedAt != nil ? "撤回" : (timeline.endedAt == nil ? "现在" : "结束")
-        return VStack(spacing: 5) {
-            GeometryReader { g in
-                let w = g.size.width
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Ink.fill)
-                    ForEach(Array(segs.enumerated()), id: \.offset) { _, s in
-                        Rectangle()
-                            .fill(Self.color(s.kind))
-                            .frame(width: max(0, CGFloat(s.to - s.from) * w))
-                            .offset(x: CGFloat(s.from) * w)
-                    }
-                    ForEach(Array(steps.enumerated()), id: \.offset) { _, f in
-                        Rectangle().fill(Color.black.opacity(0.6)).frame(width: 1).offset(x: CGFloat(f) * w)
-                    }
-                }
-                .clipShape(Capsule())
-                .overlay(alignment: .leading) {
-                    if let decl {
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 8, height: 8)
-                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
-                            .offset(x: min(max(0, CGFloat(decl) * w - 4), max(0, w - 8)))
-                    }
-                }
-            }
-            .frame(height: 6)
-            HStack {
-                Text("回车 " + timeline.startedAt.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)))
-                Spacer(minLength: 8)
-                Text("\(endWord) \(Clock.text(total))")
-            }
-            .font(Ink.number(10))
-            .foregroundStyle(Ink.tertiary)
-        }
+    /// 主刻度步长：让主刻度间隔不小于约 56pt，按总时长取整数秒（1 秒 … 2 小时），不画假精度。
+    static func majorStep(total: TimeInterval, width: CGFloat) -> TimeInterval {
+        let candidates: [TimeInterval] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200]
+        let fit = max(2.0, Double(width / 56))
+        return candidates.first { total / $0 <= fit } ?? 7200
     }
 
     static func color(_ k: Segment.Kind) -> Color {
         switch k {
-        case .before: Color.white.opacity(0.3)
-        case .after: Color.white.opacity(0.85)
-        case .waiting: ChoiceCard.accent
+        case .before: Color(red: 0.75, green: 0.35, blue: 0.95)     // systemPurple（暗色）
+        case .after: Color(red: 0.0, green: 0.86, blue: 0.76)       // systemMint（暗色）
+        case .waiting: Color(red: 0.04, green: 0.52, blue: 1.0)     // systemBlue（暗色）
+        }
+    }
+
+    static func name(_ k: Segment.Kind) -> String {
+        switch k {
+        case .before: L("写出理解前", "Before reading")
+        case .after: L("写出理解后", "After reading")
+        case .waiting: L("等你回应", "Waiting on you")
+        }
+    }
+
+    var body: some View {
+        if let end = timeline.endedAt {
+            content(now: end)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in content(now: ctx.date) }
+        }
+    }
+
+    private func content(now: Date) -> some View {
+        let segs = Self.segments(timeline, now: now)
+        let total = max(now.timeIntervalSince(timeline.startedAt), 1)
+        return VStack(alignment: .leading, spacing: 7) {
+            // 高度要装下：轨道 5+8、刻度 3+5、标签 2+约 11。先前给 30，标签画到 34，下半截被裁（2026-09-13 实拍）。
+            Canvas { ctx, size in draw(&ctx, size: size, segs: segs, total: total, now: now) }
+                .frame(height: 36)
+            legend(segs, total: total)
+        }
+    }
+
+    private func draw(_ ctx: inout GraphicsContext, size: CGSize, segs: [Segment], total: TimeInterval, now: Date) {
+        let w = size.width
+        let barY: CGFloat = 5, barH: CGFloat = 8
+        let track = Path(roundedRect: CGRect(x: 0, y: barY, width: w, height: barH), cornerRadius: barH / 2)
+        ctx.fill(track, with: .color(Ink.fill))
+
+        var bar = ctx
+        bar.clip(to: track)
+        for (i, s) in segs.enumerated() {
+            let x0 = CGFloat(s.from) * w + (i > 0 ? 1 : 0)
+            let x1 = CGFloat(s.to) * w
+            guard x1 > x0 else { continue }
+            bar.fill(Path(CGRect(x: x0, y: barY, width: x1 - x0, height: barH)), with: .color(Self.color(s.kind)))
+        }
+        for step in timeline.progress.steps.suffix(120) {
+            guard let f = Self.fraction(step.at, timeline, now: now) else { continue }
+            bar.fill(Path(CGRect(x: CGFloat(f) * w - 0.5, y: barY, width: 1, height: barH)), with: .color(.black.opacity(0.45)))
+        }
+
+        // 写出理解的那一刻：白色圆点压在两段交界处。
+        if let d = Self.fraction(timeline.progress.declaredAt, timeline, now: now) {
+            let x = min(max(5, CGFloat(d) * w), w - 5)
+            let knob = Path(ellipseIn: CGRect(x: x - 5, y: barY + barH / 2 - 5, width: 10, height: 10))
+            ctx.fill(knob, with: .color(.white))
+            ctx.stroke(knob, with: .color(.black), lineWidth: 1.5)
+        }
+
+        // 刻度：主刻度带时间，次刻度五等分（间隔太密就不画）。
+        let tickY = barY + barH + 3
+        let major = Self.majorStep(total: total, width: w)
+        let minor = major / 5
+        func line(_ x: CGFloat, _ h: CGFloat, _ c: Color) {
+            var p = Path(); p.move(to: CGPoint(x: x, y: tickY)); p.addLine(to: CGPoint(x: x, y: tickY + h))
+            ctx.stroke(p, with: .color(c), lineWidth: 0.5)
+        }
+        if w * CGFloat(minor / total) >= 6 {
+            var t = minor
+            while t < total {
+                if t.truncatingRemainder(dividingBy: major) > 0.01 { line(w * CGFloat(t / total), 2.5, Ink.quaternary) }
+                t += minor
+            }
+        }
+        let endWord = timeline.progress.interruptedAt != nil ? L("撤回", "Withdrawn")
+            : (timeline.endedAt == nil ? L("现在", "Now") : L("结束", "Ended"))
+        let endText = ctx.resolve(Text("\(endWord) \(Clock.text(total))").font(Ink.number(9.5, .semibold)).foregroundStyle(Ink.secondary))
+        let endWidth = endText.measure(in: CGSize(width: 200, height: 20)).width
+        var t: TimeInterval = 0
+        while t <= total + 0.01 {
+            let x = w * CGFloat(t / total)
+            line(min(max(0.25, x), w - 0.25), 5, Ink.tertiary)
+            if t == 0 || x < w - endWidth - 10 {
+                let label = ctx.resolve(Text(t == 0 ? "0" : Clock.text(t)).font(Ink.number(9)).foregroundStyle(Ink.tertiary))
+                ctx.draw(label, at: CGPoint(x: max(0, x), y: tickY + 7), anchor: t == 0 ? .topLeading : .top)
+            }
+            t += major
+        }
+        line(w - 0.25, 5, Ink.secondary)
+        ctx.draw(endText, at: CGPoint(x: w, y: tickY + 7), anchor: .topTrailing)
+    }
+
+    private func legend(_ segs: [Segment], total: TimeInterval) -> some View {
+        HStack(spacing: 12) {
+            ForEach(Array(segs.enumerated()), id: \.offset) { _, s in
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(Self.color(s.kind))
+                        .frame(width: 8, height: 8)
+                    Text(Self.name(s.kind)).font(.system(size: 10.5)).foregroundStyle(Ink.secondary)
+                    Text(Clock.text((s.to - s.from) * total)).font(Ink.number(10.5, .semibold)).foregroundStyle(Ink.primary)
+                }
+                .fixedSize()
+            }
+            Spacer(minLength: 6)
+            Text(L("回车 ", "Sent ") + timeline.startedAt.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)))
+                .font(Ink.number(10))
+                .foregroundStyle(Ink.tertiary)
+                .lineLimit(1)
         }
     }
 }

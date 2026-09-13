@@ -11,6 +11,8 @@ import Foundation
 @MainActor
 @Suite("等你选择")
 struct ChoiceWaitTests {
+    init() { Lang.current = .zh }
+
     private static let ask = #"{"type":"assistant","timestamp":"2026-09-12T10:00:05.000Z","message":{"content":[{"type":"tool_use","id":"toolu_q1","name":"AskUserQuestion","input":{"questions":[{"question":"用哪种方案？","header":"方案","multiSelect":false,"options":[{"label":"A 方案","description":"x"},{"label":"B 方案","description":"y"}]},{"question":"第二题","header":"范围","multiSelect":true,"options":[{"label":"甲","description":""}]}]}}]}}"#
     private static let otherResult = #"{"type":"user","timestamp":"2026-09-12T10:00:06.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_other","content":"ok"}]}}"#
     private static let answer = #"{"type":"user","timestamp":"2026-09-12T10:01:30.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_q1","content":"User has answered your questions"}]}}"#

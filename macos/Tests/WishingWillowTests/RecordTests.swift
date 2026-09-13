@@ -6,6 +6,8 @@ import Foundation
 /// 真值那一关在 LiveStateTests 里，对着磁盘上插件真正写出来的文件跑。
 @Suite("状态文件解码")
 struct RecordTests {
+    init() { Lang.current = .zh }
+
 
     private func decode(_ json: String) throws -> WillowRecord {
         try JSONDecoder().decode(WillowRecord.self, from: Data(json.utf8))

@@ -41,7 +41,7 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("许愿柳")
+            Text(L("许愿柳", "Wishing Willow"))
                 .font(.system(size: 13, weight: .semibold))
             Text("Wishing-Willow")
                 .font(.system(size: 11))
@@ -60,11 +60,11 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack {
-            Text("两栏一致与否由你判断 —— 这就是全部设计")
+            Text(L("两栏一致与否由你判断 —— 这就是全部设计", "Whether the two agree is yours to judge — that is the whole design"))
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button("退出") { NSApplication.shared.terminate(nil) }
+            Button(L("退出", "Quit")) { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
                 .padding(.horizontal, 10)
@@ -82,11 +82,11 @@ private struct EmptyStateView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(directoryExists ? "还没有任何一轮" : "插件还没跑过")
+            Text(directoryExists ? L("还没有任何一轮", "No turns yet") : L("插件还没跑过", "The plugin hasn’t run yet"))
                 .font(.system(size: 12, weight: .medium))
             Text(directoryExists
-                 ? "装好插件的会话说一句话之后，这里就会出现。"
-                 : "这个目录由插件创建，读方不碰它 —— 它不存在，就是「插件一次都没跑过」的证据。")
+                 ? L("装好插件的会话说一句话之后，这里就会出现。", "Say something in a session with the plugin installed and it will show up here.")
+                 : L("这个目录由插件创建，读方不碰它 —— 它不存在，就是「插件一次都没跑过」的证据。", "The plugin creates this folder and the app never writes to it — if it doesn’t exist, the plugin has never run."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Text(path)

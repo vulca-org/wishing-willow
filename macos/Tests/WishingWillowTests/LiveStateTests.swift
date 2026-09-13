@@ -12,6 +12,8 @@ import Foundation
 /// 没有文件时不静默通过：打出 SKIP 并报出扫了几个。跳过不是通过。
 @Suite("真实状态文件")
 struct LiveStateTests {
+    init() { Lang.current = .zh }
+
 
     @Test("磁盘上的状态文件全部能解码")
     func decodesEveryRealFile() throws {

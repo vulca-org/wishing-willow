@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("并行会话：排队与第二个会话")
 struct MultiSessionTests {
+    init() { Lang.current = .zh }
+
     @Test("排队：没在展示就立刻展示；正在展示同一个不排；别的会话排在后面、不重复；取下一个时跳过已结束的")
     func arrivalQueue() {
         var q = ArrivalQueue()

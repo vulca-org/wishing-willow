@@ -15,54 +15,54 @@ struct TurnView: View {
             if state.isStale { staleNote }
 
             if state.record.isSystemMessage {
-                row(label: "这一轮", text: "系统消息（\(PromptSource.describe(state.prompt))），不是你说的", tone: .secondary)
+                row(label: L("这一轮", "This turn"), text: L("系统消息（\(PromptSource.describe(state.prompt))），不是你说的", "System message (\(PromptSource.describe(state.prompt))) — not from you"), tone: .secondary)
             } else {
-                row(label: "你的要求", text: state.prompt, tone: .primary)
+                row(label: L("你的要求", "Your request"), text: state.prompt, tone: .primary)
             }
 
             switch state.declaration {
             case .declared(let d):
-                row(label: "Claude 的理解", text: d, tone: .primary)
+                row(label: L("Claude 的理解", "Claude’s reading"), text: d, tone: .primary)
             case .undeclared:
                 banner(
                     icon: "circle.dotted",
-                    title: "本轮未声明",
-                    detail: "模型没有写出它把这个请求读成了什么。缺席本身就是信号。",
+                    title: L("本轮未声明", "No reading this turn"),
+                    detail: L("模型没有写出它把这个请求读成了什么。缺席本身就是信号。", "Claude didn’t write how it read this request. The absence is the signal."),
                     tint: .yellow
                 )
             case .unreadable:
                 banner(
                     icon: "exclamationmark.triangle.fill",
-                    title: "读不到本轮输入",
-                    detail: "hook 跑了，但拿不到你说的话 —— 这是插件坏了，不是模型没说话。",
+                    title: L("读不到本轮输入", "Can’t read this turn’s input"),
+                    detail: L("hook 跑了，但拿不到你说的话 —— 这是插件坏了，不是模型没说话。", "The hook ran but couldn’t get your words — the plugin is broken, Claude isn’t silent."),
                     tint: .red
                 )
             case .awaiting:
                 banner(
                     icon: "hourglass",
-                    title: "等第一轮",
-                    detail: "插件是在这一轮中间装上的，下一轮开始记录。",
+                    title: L("等第一轮", "Waiting for the first turn"),
+                    detail: L("插件是在这一轮中间装上的，下一轮开始记录。", "The plugin was installed mid-turn; recording starts next turn."),
                     tint: .secondary
                 )
             case .interrupted:
                 banner(
                     icon: "arrow.uturn.backward",
-                    title: "你撤回了这一轮",
-                    detail: "打断不会写出声明。",
+                    title: L("你撤回了这一轮", "You withdrew this turn"),
+                    detail: L("打断不会写出声明。", "An interrupted turn writes no reading."),
                     tint: .secondary
                 )
             case .inProgress:
                 banner(
                     icon: "ellipsis",
-                    title: "模型正在回答",
-                    detail: "声明要等这一轮写出来才读得到。",
+                    title: L("模型正在回答", "Claude is answering"),
+                    detail: L("声明要等这一轮写出来才读得到。", "The reading appears once Claude writes it."),
                     tint: .secondary
                 )
             case .notAsked:
                 banner(
                     icon: "text.bubble",
-                    title: "这一轮没问",
-                    detail: "太短或是系统消息，插件没有注入提醒 —— 不是模型没说话。",
+                    title: L("这一轮没问", "Not asked this turn"),
+                    detail: L("太短或是系统消息，插件没有注入提醒 —— 不是模型没说话。", "Too short or a system message, so no prompt was injected — Claude isn’t silent."),
                     tint: .secondary
                 )
             }
@@ -104,7 +104,7 @@ struct TurnView: View {
     }
 
     private var staleNote: some View {
-        Text("这个会话已经不活跃了，下面是它最后一轮的样子。")
+        Text(L("这个会话已经不活跃了，下面是它最后一轮的样子。", "This session is no longer active. Here is its last turn."))
             .font(.system(size: 10))
             .foregroundStyle(.tertiary)
     }
@@ -121,7 +121,7 @@ struct TurnView: View {
             Spacer(minLength: 0)
             // 轮次可能是未知的（插件在一轮中间装上）。不知道就显示「—」，
             // 不要把 null 渲染成「第 1 轮」——那是编一个看起来确定的数。
-            Text(state.record.turnIndex.map { "第 \($0 + 1) 轮" } ?? "第 — 轮")
+            Text(state.record.turnIndex.map { L("第 \($0 + 1) 轮", "Turn \($0 + 1)") } ?? L("第 — 轮", "Turn —"))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }

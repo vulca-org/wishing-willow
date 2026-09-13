@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("展开态右耳文字")
 struct EarTextTests {
+    init() { Lang.current = .zh }
+
     @Test("进行中还没写出标签：标签位与阶段位不是同一句，标签位标为沿用")
     func noDuplicate() throws {
         let d = FileManager.default.temporaryDirectory.appendingPathComponent("willow-ear-\(UUID().uuidString)")

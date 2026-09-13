@@ -6,6 +6,8 @@ import Foundation
 @MainActor
 @Suite("两翼显示规则")
 struct WingRuleTests {
+    init() { Lang.current = .zh }
+
     private func state(_ json: String) throws -> SessionState {
         SessionState(record: try JSONDecoder().decode(WillowRecord.self, from: Data(json.utf8)), now: .now)
     }

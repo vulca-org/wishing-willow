@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("Duo 状态图标")
 struct DuoGlyphTests {
+    init() { Lang.current = .zh }
+
     private func state(_ json: String, interruptedAt: Date? = nil) throws -> SessionState {
         SessionState(record: try JSONDecoder().decode(WillowRecord.self, from: Data(json.utf8)), now: .now,
                      liveInterruptedAt: interruptedAt)
@@ -55,5 +57,14 @@ struct DuoGlyphTests {
         #expect(DuoGeometry.dotAngles == DuoGeometry.dotAngles.sorted(by: >))
         let gaps = zip(DuoGeometry.dotAngles, DuoGeometry.dotAngles.dropFirst()).map { $0 - $1 }
         #expect(Set(gaps).count == 1)
+    }
+
+    @Test("底部四点 = 并行在跑的会话数：0 个不亮，1–4 亮对应个数，超过 4 个亮满")
+    func dotsCountSessions() {
+        #expect(DuoGeometry.litDots(running: 0) == 0)
+        #expect(DuoGeometry.litDots(running: 1) == 1)
+        #expect(DuoGeometry.litDots(running: 3) == 3)
+        #expect(DuoGeometry.litDots(running: 4) == 4)
+        #expect(DuoGeometry.litDots(running: 9) == 4)
     }
 }

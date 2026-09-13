@@ -32,7 +32,7 @@ struct SessionRail: View {
     private var overflow: some View {
         if sessions.count > 6 {
             Button { expanded.toggle() } label: {
-                Text(expanded ? "收起" : "+\(sessions.count - 6)")
+                Text(expanded ? L("收起", "Less") : "+\(sessions.count - 6)")
                     .font(.system(size: 10, weight: .medium))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)

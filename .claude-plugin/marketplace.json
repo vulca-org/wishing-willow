@@ -1,7 +1,7 @@
 {
   "name": "wishing-willow",
   "description": "Surface what the model thinks you asked, next to what you actually said.",
-  "owner": { "name": "vulca-org", "url": "https://github.com/vulca-org" },
+  "owner": { "name": "Haorui Yu", "url": "https://github.com/yha9806" },
   "plugins": [
     {
       "name": "willow",

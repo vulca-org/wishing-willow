@@ -7,6 +7,8 @@ import Foundation
 @MainActor
 @Suite("并行计数")
 struct ParallelCountTests {
+    init() { Lang.current = .zh }
+
     @Test("在跑 = 最近 10 分钟有动静；空闲 = 进程开着但没动静；结束的、进程没了的都不算")
     func counts() throws {
         let d = FileManager.default.temporaryDirectory.appendingPathComponent("willow-par-\(UUID().uuidString)")
@@ -34,14 +36,10 @@ struct ParallelCountTests {
         #expect(par.idle == 1)
     }
 
-    @Test("文案说总数：不写「+N」「另有 N 个」；胶囊后面叠层 = 在跑数 − 2，最多 2 层")
+    @Test("文案说总数：不写「+N」「另有 N 个」")
     func copy() {
         #expect(FocusRule.parallelSummary(running: 1, idle: 0) == "只有这一个在跑")
         #expect(FocusRule.parallelSummary(running: 3, idle: 0) == "共 3 个会话在跑")
         #expect(FocusRule.parallelSummary(running: 3, idle: 2) == "共 3 个会话在跑 · 2 个空闲")
-        #expect(FocusRule.stackLayers(running: 2) == 0)
-        #expect(FocusRule.stackLayers(running: 3) == 1)
-        #expect(FocusRule.stackLayers(running: 4) == 2)
-        #expect(FocusRule.stackLayers(running: 7) == 2)
     }
 }

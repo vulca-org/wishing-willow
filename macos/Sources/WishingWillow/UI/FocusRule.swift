@@ -67,12 +67,10 @@ enum FocusRule {
     }
 
     static func parallelSummary(running: Int, idle: Int) -> String {
-        let head = running <= 1 ? "只有这一个在跑" : "共 \(running) 个会话在跑"
-        return idle > 0 ? "\(head) · \(idle) 个空闲" : head
+        let head = running <= 1 ? L("只有这一个在跑", "Only this session running") : L("共 \(running) 个会话在跑", "\(running) sessions running")
+        return idle > 0 ? head + L(" · \(idle) 个空闲", " · \(idle) idle") : head
     }
 
-    /// 胶囊后面叠几层：主会话占两翼、胶囊是第二个，再往后还在跑的每个叠一层，最多画 2 层。
-    static func stackLayers(running: Int) -> Int { min(2, max(0, running - 2)) }
 
     /// 主会话与胶囊之外还在跑的会话数（界面上不再直接写成「+N」）。
     static func extra(_ store: WillowStore, primary: SessionState?, secondary: SessionState?) -> Int {
@@ -108,29 +106,29 @@ enum FocusRule {
     /// 用该会话**上一个真实写下的标签**，并标记为沿用，读方把它调暗 ——
     /// 不能把上一轮的解码冒充成这一轮的，也不该退回一个被截断的工作区名。
     static func label(_ s: SessionState, _ seen: SeenStore, _ store: WillowStore) -> Label? {
-        if s.declaration == .unreadable { return Label(text: "读不到输入", carried: false) }
+        if s.declaration == .unreadable { return Label(text: L("读不到输入", "Can’t read"), carried: false) }
         if let c = store.progress(for: s)?.pendingChoice {        // 看过也照样显示：它在等你
-            return Label(text: c.kind == .plan ? "等你批准" : "等你选择", carried: false)
+            return Label(text: c.kind == .plan ? L("等你批准", "Approve") : L("等你选择", "Your turn"), carried: false)
         }
         if let w = store.recentWithdraw[s.id] {
-            return Label(text: w.kind == .interrupted ? "已撤回" : "撤回排队", carried: true)
+            return Label(text: w.kind == .interrupted ? L("已撤回", "Withdrawn") : L("撤回排队", "Unqueued"), carried: true)
         }
         if s.declaration == .interrupted { return nil }       // 撤回提示过后缩回刘海
         // 回答中：声明还没有，就老实说在回答。先前退回工作区名，截断成「twitter-cont…」，没有信息。
         if s.declaration == .inProgress {
             let p = store.progress(for: s)
             if let t = p?.tag { return Label(text: t, carried: false) }      // 声明刚写出——临时标签
-            if p?.decode != nil { return Label(text: "有新声明", carried: false) }
-            if let p, p.firstWriteAt == nil { return Label(text: "思考中", carried: true) }
-            return Label(text: "回答中", carried: true)
+            if p?.decode != nil { return Label(text: L("有新声明", "New reading"), carried: false) }
+            if let p, p.firstWriteAt == nil { return Label(text: L("思考中", "Thinking"), carried: true) }
+            return Label(text: L("回答中", "Answering"), carried: true)
         }
         guard seen.isUnread(s) else { return nil }          // 看过了 → 两翼缩回刘海，不遮东西
-        if s.declaration == .undeclared { return Label(text: "没写声明", carried: false) }
+        if s.declaration == .undeclared { return Label(text: L("没写声明", "No reading"), carried: false) }
         if let t = s.tag { return Label(text: t, carried: false) }
         if s.declaration == .notAsked, let t = lastLoggedTag(s, store) {
             return Label(text: t, carried: true)
         }
-        if case .declared = s.declaration { return Label(text: "有新声明", carried: false) }
+        if case .declared = s.declaration { return Label(text: L("有新声明", "New reading"), carried: false) }
         return nil                                          // 绝不退回工作区名
     }
 
