@@ -152,7 +152,7 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     let bottomRadius: CGFloat
     /// 岛此刻给菜单栏让了多少。连桥层的岛身平时往上伸出画布（免得模糊吃掉顶边）；让路时整层跟着下移，
     /// 再往上伸就是一条黑带盖在菜单栏上，所以让多少就少伸多少。
-    /// 让路时胶囊也跟着长到主体那么高、顶边贴住菜单栏，所以 lift 要逐帧插值。
+    /// 让路时胶囊顶边跟着对齐到主体顶边，所以 lift 要逐帧插值。
     var lift: CGFloat
     let liftDepth: CGFloat
     let onTap: () -> Void
@@ -190,13 +190,13 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     var body: some View {
         GeometryReader { g in
             let w = pillWidth + pillExtra
-            let h = IslandController.dodgedPillHeight(dodge: lift, depth: liftDepth, notchHeight: notchHeight)
+            let h = IslandController.pillHeight
             let mid = g.size.width / 2
             let base = anchorWidth ?? islandWidth
             let tucked = base / 2 - w / 2 - 8
             let rest = base / 2 + IslandController.pillGap + w / 2
             let cx = mid + tucked + (rest - tucked) * pillOut
-            let cy = notchHeight / 2
+            let cy = IslandController.dodgedPillCenterY(dodge: lift, depth: liftDepth, notchHeight: notchHeight)
             ZStack(alignment: .topLeading) {
                 if liquid && pillOut > 0.02 && pillOut < 0.97 {
                     Canvas { ctx, size in

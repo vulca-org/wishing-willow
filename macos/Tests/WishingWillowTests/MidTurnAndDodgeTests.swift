@@ -109,22 +109,23 @@ struct MidTurnAndDodgeTests {
         #expect(FocusRule.parallel(store).idle == 1)
     }
 
-    @Test("菜单栏让路：碰到最顶上那一行、不在灵动岛上 → 让；带子里但没碰顶边 → 不让（菜单栏还没出来）；落在灵动岛上 → 不让（那是悬停）；展开或缩回刘海 → 不让")
+    @Test("菜单栏让路·开始：鼠标在带子里、不在灵动岛上才去查菜单栏；菜单栏窗口出现（正在滑出或已出来）才让；展开或缩回刘海不查")
     func dodgeStart() {
         let band = DodgeRule.band(screen: CGRect(x: 0, y: 0, width: 1280, height: 832), height: 28)
         #expect(band == CGRect(x: 0, y: 804, width: 1280, height: 28))
         let island = CGRect(x: 440, y: 804, width: 520, height: 28)
-        let now = Date()
-        func start(_ p: CGPoint, active: Bool = true) -> Bool {
-            DodgeRule.next(dodging: false, active: active, pointer: p, band: band, island: island,
-                           outSince: nil, now: now, menuOpen: false).dodge
+        func wants(_ p: CGPoint, active: Bool = true) -> Bool {
+            DodgeRule.wantsMenuBarCheck(active: active, pointer: p, band: band, island: island)
         }
-        #expect(start(CGPoint(x: 200, y: 832)) == true)       // 顶边那一行
-        #expect(start(CGPoint(x: 1100, y: 831.5)) == true)
-        #expect(start(CGPoint(x: 1100, y: 815)) == false)     // 带子里，但没碰到顶边
-        #expect(start(CGPoint(x: 600, y: 831)) == false)      // 在灵动岛上
-        #expect(start(CGPoint(x: 200, y: 700)) == false)      // 不在带子里
-        #expect(start(CGPoint(x: 200, y: 831), active: false) == false)
+        #expect(wants(CGPoint(x: 200, y: 832)))                // 顶边那一行
+        #expect(wants(CGPoint(x: 1100, y: 831.5)))
+        #expect(wants(CGPoint(x: 1100, y: 815)))               // 带子里任何一行都查：菜单栏出来了才让
+        #expect(!wants(CGPoint(x: 600, y: 831)))               // 在灵动岛上：那是悬停
+        #expect(!wants(CGPoint(x: 200, y: 700)))               // 不在带子里
+        #expect(!wants(CGPoint(x: 200, y: 831), active: false))
+        #expect(!DodgeRule.shouldStart(menuBarY: nil))         // 菜单栏还没出来：不让
+        #expect(DodgeRule.shouldStart(menuBarY: -17))          // 实测滑出时第一次读到的就是 y = −17
+        #expect(DodgeRule.shouldStart(menuBarY: 0))
     }
 
     @Test("让路形状：不让路时凹肩贴屏幕上沿；让到底时颈顶回到屏幕上沿、刘海底角外侧由倒角填上、两端全圆不再有凹肩；中途与窄岛不出错")
@@ -162,11 +163,12 @@ struct MidTurnAndDodgeTests {
         #expect(narrow.boundingRect.width <= 156.01)
     }
 
-    @Test("让路时右边胶囊长到和主体一样高（28pt）、顶边贴住菜单栏；不让路时 24pt")
+    @Test("让路时右边胶囊保持 24pt，只把顶边对齐到主体顶边（中心 14 → 12）；不让路时在刘海高度里居中")
     func pillFlush() {
-        #expect(IslandController.dodgedPillHeight(dodge: 0, depth: 28, notchHeight: 28) == 24)
-        #expect(IslandController.dodgedPillHeight(dodge: 28, depth: 28, notchHeight: 28) == 28)
-        #expect(IslandController.dodgedPillHeight(dodge: 14, depth: 28, notchHeight: 28) == 26)
+        #expect(IslandController.pillHeight == 24)
+        #expect(IslandController.dodgedPillCenterY(dodge: 0, depth: 28, notchHeight: 28) == 14)
+        #expect(IslandController.dodgedPillCenterY(dodge: 28, depth: 28, notchHeight: 28) == 12)   // 顶边 12 − 12 = 0，和主体顶边齐
+        #expect(IslandController.dodgedPillCenterY(dodge: 14, depth: 28, notchHeight: 28) == 13)
     }
 
     @Test("点开面板：显示灵动岛上正显示的会话，不是列表第一个；面板里点过的优先；那个会话不在了才退回第一个")
@@ -241,27 +243,32 @@ struct MidTurnAndDodgeTests {
         #expect(TurnBar.name(.turn) == "这一轮")
     }
 
-    @Test("菜单栏让路：让开后鼠标在带子里一直让；离开不到 0.35 秒不回；超过才回；有菜单开着不回")
+    @Test("第四行「我补上的」插在理解和标签之间：理解与标签照样读得到，补上的那行不会被当成理解")
+    func fillLineParsing() {
+        let msg = "你批准的：查一下有没有相关论文\n我读成了：逐项检索有没有撞车\n我补上的：「相关 paper」定为撞车与经典先例；没查会刊收不收\n标签：查撞车文献\n\n正文从这里开始"
+        let hit = TranscriptTail.scanMessage(msg)
+        #expect(hit?.decode == "逐项检索有没有撞车")
+        #expect(hit?.tag == "查撞车文献")
+    }
+
+    @Test("菜单栏让路·回位：鼠标在带子里或有下拉菜单开着不回；离开带子后菜单栏开始收（y 往负走）或没了才回；收起态不画东西立刻回；曲线端点对；追赶只往前")
     func dodgeEnd() {
-        let band = DodgeRule.band(screen: CGRect(x: 0, y: 0, width: 1280, height: 832), height: 28)
-        let island = CGRect(x: 440, y: 804, width: 520, height: 28)
-        let t0 = Date()
-        let inBand = DodgeRule.next(dodging: true, active: true, pointer: CGPoint(x: 600, y: 820), band: band, island: island,
-                                    outSince: nil, now: t0, menuOpen: false)
-        #expect(inBand.dodge == true)
-        #expect(inBand.outSince == nil)
-        let justLeft = DodgeRule.next(dodging: true, active: true, pointer: CGPoint(x: 600, y: 700), band: band, island: island,
-                                      outSince: nil, now: t0, menuOpen: false)
-        #expect(justLeft.dodge == true)
-        #expect(justLeft.outSince == t0)
-        let later = DodgeRule.next(dodging: true, active: true, pointer: CGPoint(x: 600, y: 700), band: band, island: island,
-                                   outSince: t0, now: t0.addingTimeInterval(0.4), menuOpen: false)
-        #expect(later.dodge == false)
-        let menu = DodgeRule.next(dodging: true, active: true, pointer: CGPoint(x: 600, y: 600), band: band, island: island,
-                                  outSince: t0, now: t0.addingTimeInterval(2), menuOpen: true)
-        #expect(menu.dodge == true)
-        let collapsed = DodgeRule.next(dodging: true, active: false, pointer: CGPoint(x: 200, y: 831), band: band, island: island,
-                                       outSince: nil, now: t0, menuOpen: false)
-        #expect(collapsed.dodge == false)
+        #expect(!DodgeRule.shouldEnd(active: true, pointerInBand: true, menuBarY: 0, popUpOpen: false))
+        #expect(!DodgeRule.shouldEnd(active: true, pointerInBand: false, menuBarY: 0, popUpOpen: false))   // 离开了但菜单栏还没开始收：等它
+        #expect(DodgeRule.shouldEnd(active: true, pointerInBand: false, menuBarY: -7, popUpOpen: false))   // 实测开始收时第一次读到 y = −7
+        #expect(DodgeRule.shouldEnd(active: true, pointerInBand: false, menuBarY: nil, popUpOpen: false))
+        #expect(!DodgeRule.shouldEnd(active: true, pointerInBand: false, menuBarY: -7, popUpOpen: true))
+        #expect(DodgeRule.shouldEnd(active: false, pointerInBand: true, menuBarY: 0, popUpOpen: false))
+        #expect(DodgeRule.eased(0, down: true) == 0)
+        #expect(abs(DodgeRule.eased(1, down: true) - 1) < 1e-9)
+        #expect(DodgeRule.eased(0, down: false) == 0)
+        #expect(abs(DodgeRule.eased(1, down: false) - 1) < 1e-9)
+        #expect(DodgeRule.eased(0.3, down: true) == 0.3)       // 画面上的菜单栏近乎匀速
+        #expect(DodgeRule.downDuration < DodgeRule.upDuration)
+        // 发现时菜单栏已经走了一截：岛先追到它此刻的位置（实测第一次读到的 y），只往前追、不往回拉
+        #expect(abs(DodgeRule.catchUp(current: 0, depth: 28, barY: -17, barHeight: 29, down: true) - 28 * (12.0 / 29) * 0.9) < 0.001)    // 读数四成 → 追到九成
+        #expect(abs(DodgeRule.catchUp(current: 28, depth: 28, barY: -7, barHeight: 29, down: false) - 28 * (22.0 / 29)) < 0.001)   // 收回直接追到读数
+        #expect(DodgeRule.catchUp(current: 20, depth: 28, barY: -17, barHeight: 29, down: true) == 20)     // 岛已经走得更远：不动
+        #expect(DodgeRule.catchUp(current: 5, depth: 28, barY: nil, barHeight: 29, down: false) == 5)
     }
 }

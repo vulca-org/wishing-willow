@@ -45,8 +45,11 @@ final class IslandController {
     private var arrivals = ArrivalQueue()
     private var outsideMonitor: Any?
     private var dodgeTimer: Timer?
-    /// 让路之后鼠标离开顶边带子的时刻；离开够久才回刘海。
-    private var dodgeOutSince: Date?
+    /// 让路的目标位置（0 或菜单栏高度）。state.dodge 是此刻画到了哪，逐帧追这个值。
+    private var dodgeTarget: CGFloat = 0
+    /// 让路那一段的逐帧推进：起点、终点、开始时刻、方向。
+    private struct DodgeTrack { let from: CGFloat; let to: CGFloat; let start: CFTimeInterval; let down: Bool }
+    private var dodgeTrack: DodgeTrack?
 
     private(set) var yielding = false
 
@@ -55,10 +58,11 @@ final class IslandController {
     static let expandedWidth: CGFloat = 500     // 内容宽；形状再加两侧凹肩
     static let maxExpandedHeight: CGFloat = 470
     static let pillHeight: CGFloat = 24
-    /// 让路时胶囊长到和主体一样高，顶边一起贴住菜单栏底边（用户 2026-09-13：「也要贴住」）；不让路时照旧 24pt。
-    static func dodgedPillHeight(dodge: CGFloat, depth: CGFloat, notchHeight: CGFloat) -> CGFloat {
+    /// 胶囊中心的纵坐标（相对岛顶）。平时在刘海高度里居中；让路时尺寸不变，顶边和主体顶边对齐，一起贴住菜单栏底边。
+    /// 先前让路时把胶囊从 24pt 拉到 28pt，用户说「直接变大了这个不对，应该是保持尺寸，顶边对齐就行」（2026-09-13）。
+    static func dodgedPillCenterY(dodge: CGFloat, depth: CGFloat, notchHeight: CGFloat) -> CGFloat {
         let p = depth > 0 ? max(0, min(1, dodge / depth)) : 0
-        return pillHeight + max(0, notchHeight - pillHeight) * p
+        return notchHeight / 2 - max(0, notchHeight - pillHeight) / 2 * p
     }
     static let pillGap: CGFloat = 6
     static let pillMax: CGFloat = 120
@@ -79,9 +83,7 @@ final class IslandController {
     static let closeHeight = Animation.spring(response: 0.3, dampingFraction: 1.0)
     static let closeWidth = Animation.spring(response: 0.45, dampingFraction: 1.0)
     static let moveSpring = Animation.spring(response: 0.38, dampingFraction: 0.8)
-    /// 给菜单栏让路：和菜单栏滑出来一样干脆、不回弹——回弹会让岛和菜单栏底边之间一会儿有缝、一会儿压住（用户 2026-09-13 要严丝合缝）。
-    static let dodgeDown = Animation.spring(response: 0.26, dampingFraction: 1.0)
-    static let dodgeUp = Animation.spring(response: 0.32, dampingFraction: 1.0)
+    // 给菜单栏让路的时长与曲线照本机菜单栏实测，写在 DodgeRule（downDuration / upDuration / eased）。
     /// 两端顶角：让路时一开始就收掉凹肩；回刘海时贴回上沿之后再长出来，读作「合上」。
     static let dodgeCornerOut = Animation.easeOut(duration: 0.12)
     static let dodgeCornerIn = Animation.easeOut(duration: 0.16)
@@ -454,8 +456,8 @@ final class IslandController {
         demoLog("expanded=\(on) reason=\(reason)")
         hoverIntent?.cancel()
         if !on { afterCollapse(pin: state.pinned) }
-        if on, state.dodge > 0 {                             // 展开就回到刘海：面板从刘海长出来
-            dodgeOutSince = nil
+        if on, state.dodge > 0 || dodgeTarget > 0 {          // 展开就回到刘海：面板从刘海长出来
+            dodgeTrack = nil; dodgeTarget = 0
             withAnimation(Self.openHeight) { state.dodge = 0; state.dodgeCorner = 0 }
         }
         // 先量尺寸、再开动画。量一次要建一整棵展开态视图（实测约 30 ms）；放在动画开始之后，
@@ -505,7 +507,7 @@ final class IslandController {
         if let shown { state.pinned = shown }       // 关面板收回时岛上还是这个会话，收稳后 afterCollapse 松开
         for s in store.sessions { seen.markSeen(s) }
         demoLog("detail=true focus=\(shown.map { String($0.prefix(8)) } ?? "nil")")
-        if state.dodge > 0 { dodgeOutSince = nil; withAnimation(Self.openHeight) { state.dodge = 0; state.dodgeCorner = 0 } }
+        if state.dodge > 0 || dodgeTarget > 0 { dodgeTrack = nil; dodgeTarget = 0; withAnimation(Self.openHeight) { state.dodge = 0; state.dodgeCorner = 0 } }
         if !state.expanded { state.pillAnchorWidth = state.shapeWidth }
         withAnimation(Self.openWidth) {
             state.detail = true
@@ -546,16 +548,18 @@ final class IslandController {
     // MARK: 菜单栏让路
 
     private func startDodgeWatch() {
-        // 只读鼠标位置，不装全局事件监听，不要辅助功能权限。0.1 秒一次，比菜单栏滑出来的动画快。
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.dodgeTick() }
+        // 只读鼠标位置和窗口列表，不装全局事件监听，不要辅助功能权限。每秒 60 次：菜单栏滑出只有约 0.1 秒，
+        // 先前 0.1 秒才看一次，光是发现就可能晚一整段动画。读窗口列表比读鼠标贵，只在碰到顶边、或让路中鼠标离开带子时读。
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dodgeTick() }
         }
-        t.tolerance = 0.03
+        t.tolerance = 0.004
         RunLoop.main.add(t, forMode: .common)
         dodgeTimer = t
     }
 
     private func dodgeTick() {
+        stepDodge()
         // 演示与录素材时不跟真鼠标走，和悬停一样。
         if PresentDemo.seconds != nil && (!PresentDemo.passive || Backdrop.isOn) { return }
         guard let s = screen() else { return }
@@ -564,38 +568,55 @@ final class IslandController {
         // 挂在刘海下方让路（别的刘海 app 在跑）时本来就在菜单栏下面，不用再让。
         let active = !yielding && !state.expanded && !state.detail && (state.shapeWidth > g.width + 1 || state.pillWidth > 0)
         let band = DodgeRule.band(screen: s.frame, height: g.height)
-        var island = shapeScreenRect(ignoringDodge: true)
-        if state.pillWidth > 0 {
-            island.size.width += Self.pillGap + state.pillWidth + (state.pillHover ? Self.pillPreview : 0)
-        }
         let p = NSEvent.mouseLocation
-        let dodging = state.dodge > 0
-        let menuOpen = dodging && !DodgeRule.inBand(p, band) && Self.popUpMenuOpen()
-        let r = DodgeRule.next(dodging: dodging, active: active, pointer: p, band: band, island: island,
-                               outSince: dodgeOutSince, now: Date(), menuOpen: menuOpen)
-        dodgeOutSince = r.outSince
-        if r.dodge != dodging { setDodge(r.dodge) }
+        if dodgeTarget == 0 {
+            var island = shapeScreenRect(ignoringDodge: true)
+            if state.pillWidth > 0 {
+                island.size.width += Self.pillGap + state.pillWidth + (state.pillHover ? Self.pillPreview : 0)
+            }
+            guard DodgeRule.wantsMenuBarCheck(active: active, pointer: p, band: band, island: island) else { return }
+            let bar = Self.menuBarWindow()
+            if DodgeRule.shouldStart(menuBarY: bar.y) { setDodge(true, bar: bar) }
+        } else {
+            let inBand = DodgeRule.inBand(p, band)
+            let bar: (y: CGFloat?, height: CGFloat, popUp: Bool) = active && !inBand ? Self.menuBarWindow() : (0, 0, false)
+            if DodgeRule.shouldEnd(active: active, pointerInBand: inBand, menuBarY: bar.y, popUpOpen: bar.popUp) { setDodge(false, bar: bar) }
+        }
     }
 
-    private func setDodge(_ on: Bool) {
+    private func setDodge(_ on: Bool, bar: (y: CGFloat?, height: CGFloat, popUp: Bool)? = nil) {
         let target: CGFloat = on ? menuBarHeight() : 0
-        guard state.dodge != target else { return }
+        guard dodgeTarget != target else { return }
+        dodgeTarget = target
         demoLog("dodge=\(on)")
         if on {
             state.dodgeDepth = target
-            withAnimation(Self.dodgeDown) { state.dodge = target }
             withAnimation(Self.dodgeCornerOut) { state.dodgeCorner = 1 }
-        } else {
-            dodgeOutSince = nil
+        }
+        // 发现时菜单栏已经走了一截：岛先追到它此刻的位置，剩下的再按曲线走（见 DodgeRule.catchUp）。
+        let from = DodgeRule.catchUp(current: state.dodge, depth: state.dodgeDepth, barY: bar?.y, barHeight: bar?.height ?? 0, down: on)
+        dodgeTrack = DodgeTrack(from: from, to: target, start: CACurrentMediaTime(), down: on)
+        stepDodge()
+    }
+
+    /// 推进一帧：位置由这里每帧直接写入，不交给 SwiftUI 的动画插值。
+    /// 插值进行中，`TimelineView` 驱动的计时文字每秒刷新时会直接排到终点的位置——回位时胶囊里的「3:24」先跳到顶上、
+    /// 左翼的「6:06」被岛的形状裁掉，和岛不同步（2026-09-13 录屏逐帧，用户报「数字计时器弹出和收回的时候不同步」）。
+    /// 每帧写实际位置，画面里就没有「终点」可跳。时长按剩余距离折算：半路反向时不会慢半拍。
+    private func stepDodge() {
+        guard let tr = dodgeTrack else { return }
+        let full = tr.down ? DodgeRule.downDuration : DodgeRule.upDuration
+        let duration = full * Double(abs(tr.to - tr.from) / max(state.dodgeDepth, 1))
+        let p = duration > 0 ? (CACurrentMediaTime() - tr.start) / duration : 1
+        let value = p >= 1 ? tr.to : tr.from + (tr.to - tr.from) * CGFloat(DodgeRule.eased(p, down: tr.down))
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { state.dodge = value }
+        guard p >= 1 else { return }
+        dodgeTrack = nil
+        if tr.to == 0 {
             // 两端的凹肩等主体贴回屏幕上沿再长；边走边长会先在半空冒出两只角。
-            withAnimation(Self.dodgeUp, completionCriteria: .logicallyComplete) {
-                state.dodge = 0
-            } completion: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.state.dodge == 0 else { return }
-                    withAnimation(Self.dodgeCornerIn) { self.state.dodgeCorner = 0 }
-                }
-            }
+            withAnimation(Self.dodgeCornerIn) { state.dodgeCorner = 0 }
         }
     }
 
@@ -607,11 +628,27 @@ final class IslandController {
         return inset > 0 ? inset : notchGeometry().height
     }
 
-    /// 有没有下拉菜单开着：菜单栏里点开的菜单画在 popUpMenu 这一层。只读窗口层级，不要屏幕录制权限。
-    static func popUpMenuOpen() -> Bool {
-        let level = Int(CGWindowLevelForKey(.popUpMenuWindow))
+    /// 菜单栏窗口此刻在哪（y：0 = 完全出来，负数 = 正在滑出或收回，nil = 不在屏幕上），以及有没有下拉菜单开着。
+    /// 一次读窗口列表两样都拿到。认菜单栏靠层级（mainMenu = 24）、属于 Window Server、宽度够宽——
+    /// 窗口名「Menubar」要屏幕录制权限才读得到，这个 app 不要那个权限；层级、所属进程、位置不需要。
+    static func menuBarWindow() -> (y: CGFloat?, height: CGFloat, popUp: Bool) {
+        let popUpLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let barLevel = Int(CGWindowLevelForKey(.mainMenuWindow))
         let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
-        return info.contains { ($0[kCGWindowLayer as String] as? Int) == level }
+        var y: CGFloat? = nil
+        var height: CGFloat = 0
+        var popUp = false
+        for w in info {
+            let layer = w[kCGWindowLayer as String] as? Int
+            if layer == popUpLevel { popUp = true }
+            guard layer == barLevel, (w[kCGWindowOwnerName as String] as? String) == "Window Server",
+                  let b = w[kCGWindowBounds as String] as? [String: Any],
+                  let by = (b["Y"] as? NSNumber)?.doubleValue, let bw = (b["Width"] as? NSNumber)?.doubleValue, bw >= 600
+            else { continue }
+            y = max(y ?? -.infinity, CGFloat(by))
+            height = CGFloat((b["Height"] as? NSNumber)?.doubleValue ?? 0)
+        }
+        return (y, height, popUp)
     }
 
     // MARK: 给 --present 用
