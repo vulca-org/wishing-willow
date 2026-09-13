@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-22",
+  "prompt_id": "00000000-0000-4000-8000-000000000022",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "你批准的：查一下有没有相关论文发表。\n我读成了：逐项检索有没有人发表过相同主张，按三判断回答。\n我补上的：「相关 paper」定为撞车与经典先例；没查目标会刊收不收。\n标签：查撞车文献\n\n先把主张拆开。"
+}

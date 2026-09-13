@@ -1,0 +1,15 @@
+{
+  "note": "第四行「我补上的」（2026-09-13 起）插在理解和标签之间：理解与标签照样取到，补上的那一行不能被当成理解或标签。",
+  "capture": {
+    "exit_code": 0,
+    "stdout": "inject"
+  },
+  "extract": {
+    "exit_code": 0
+  },
+  "state_file": {
+    "decode": "逐项检索有没有人发表过相同主张，按三判断回答。",
+    "tag": "查撞车文献",
+    "prompt_startswith": "是不是有相关的paper发表"
+  }
+}

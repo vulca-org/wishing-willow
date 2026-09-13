@@ -1,0 +1,8 @@
+{
+  "cwd": "/tmp/fake/project",
+  "permission_mode": "default",
+  "session_id": "test-sess-22",
+  "prompt_id": "00000000-0000-4000-8000-000000000022",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "是不是有相关的paper发表？我们要确认现在的主张有没有被别人做过，然后再定投哪里。"
+}
