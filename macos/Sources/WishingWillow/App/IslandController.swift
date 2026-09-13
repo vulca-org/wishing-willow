@@ -98,6 +98,7 @@ final class IslandController {
         let host = NSHostingView(rootView: IslandView(
             store: store, seen: seen, state: state,
             notchWidth: g.width, notchHeight: g.height,
+            stemWidth: screen()?.auxiliaryTopLeftArea != nil && !yielding ? g.width : 0,
             onHover: { [weak self] inside in self?.hover(inside) },
             onPillHover: { [weak self] inside in self?.pillHover(inside) },
             onClick: { [weak self] in self?.openDetail() },
@@ -541,7 +542,8 @@ final class IslandController {
         guard let s = screen() else { return }
         let g = notchGeometry()
         // 收起态、而且两翼或胶囊画着东西才会挡：缩回刘海时形状和物理刘海一样宽。
-        let active = !state.expanded && !state.detail && (state.shapeWidth > g.width + 1 || state.pillWidth > 0)
+        // 挂在刘海下方让路（别的刘海 app 在跑）时本来就在菜单栏下面，不用再让。
+        let active = !yielding && !state.expanded && !state.detail && (state.shapeWidth > g.width + 1 || state.pillWidth > 0)
         let band = DodgeRule.band(screen: s.frame, height: g.height)
         var island = shapeScreenRect(ignoringDodge: true)
         if state.pillWidth > 0 {
@@ -561,6 +563,7 @@ final class IslandController {
         guard state.dodge != target else { return }
         demoLog("dodge=\(on)")
         if !on { dodgeOutSince = nil }
+        if on { state.dodgeDepth = target }
         withAnimation(on ? Self.dodgeDown : Self.dodgeUp) { state.dodge = target }
     }
 

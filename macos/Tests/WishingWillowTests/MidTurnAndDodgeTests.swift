@@ -125,6 +125,34 @@ struct MidTurnAndDodgeTests {
         #expect(start(CGPoint(x: 200, y: 831), active: false) == false)
     }
 
+    @Test("让路形状：不让路时凹肩贴屏幕上沿；让到底时颈顶回到屏幕上沿、刘海底角外侧由倒角填上、两端全圆不再有凹肩；中途与窄岛不出错")
+    func dodgeShape() {
+        let rect = CGRect(x: 0, y: 0, width: 352, height: 28)     // 刘海 156 + 两翼 92×2 + 两肩 6×2
+        let rest = NotchShape(topRadius: 6, bottomRadius: 14).path(in: rect)
+        #expect(rest.boundingRect.minY == 0)
+        #expect(rest.contains(CGPoint(x: 4, y: 0.5)))             // 凹肩：黑色沿屏幕上沿流出去
+        #expect(!rest.contains(CGPoint(x: 176, y: -5)))
+
+        let down = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, stemWidth: 156).path(in: rect)
+        #expect(down.boundingRect.minY <= -28)                    // 颈顶够到屏幕上沿，和刘海连着
+        #expect(down.contains(CGPoint(x: 176, y: -14)))           // 颈
+        #expect(down.contains(CGPoint(x: 97, y: -0.5)))           // 刘海左底角外 1pt：倒角填上，不漏亮三角
+        #expect(down.contains(CGPoint(x: 255, y: -0.5)))          // 右侧对称
+        #expect(!down.contains(CGPoint(x: 97, y: -9)))            // 倒角之外仍是菜单栏
+        #expect(!down.contains(CGPoint(x: 4, y: 0.5)))            // 两端不再有凹肩
+        #expect(!down.contains(CGPoint(x: 7, y: 1)))              // 左上角是凸圆角
+        #expect(down.contains(CGPoint(x: 20, y: 14)))
+
+        let midway = NotchShape(topRadius: 6, bottomRadius: 14, drop: 10, dropDepth: 28, stemWidth: 156).path(in: rect)
+        #expect(midway.boundingRect.minY <= -10)
+        #expect(midway.contains(CGPoint(x: 176, y: -5)))          // 途中颈也一直连着刘海，不出现缝
+
+        let narrow = NotchShape(topRadius: 6, bottomRadius: 14, drop: 28, dropDepth: 28, stemWidth: 156)
+            .path(in: CGRect(x: 0, y: 0, width: 156, height: 28))
+        #expect(narrow.contains(CGPoint(x: 78, y: 14)))
+        #expect(narrow.boundingRect.width <= 156.01)
+    }
+
     @Test("菜单栏让路：让开后鼠标在带子里一直让；离开不到 0.35 秒不回；超过才回；有菜单开着不回")
     func dodgeEnd() {
         let band = DodgeRule.band(screen: CGRect(x: 0, y: 0, width: 1280, height: 832), height: 28)

@@ -24,8 +24,10 @@ final class IslandState {
     var pillHover = false
     /// 鼠标刚进灵动岛、还没到展开的 0.3 秒：岛先微微鼓一下，让人知道它接到了。
     var hovering = false
-    /// 给菜单栏让路时往下挪的距离；0 = 贴着刘海。让路时正好是菜单栏的高度：凹肩接住菜单栏底边，严丝合缝。
+    /// 给菜单栏让路时往下挪的距离；0 = 贴着刘海。让路时正好是菜单栏的高度：主体顶边贴住菜单栏底边，严丝合缝。
     var dodge: CGFloat = 0
+    /// 让到底是多少（开始让路时定下的菜单栏高度）。形状按 dodge / dodgeDepth 从凹肩变成挂在刘海下的胶囊。
+    var dodgeDepth: CGFloat = 0
 }
 
 /// 灵动岛本体：纯黑、顶边贴着屏幕上沿、顶部两角凹肩、下方两角圆，和刘海连成一块。
@@ -40,6 +42,8 @@ struct IslandView: View {
     let state: IslandState
     let notchWidth: CGFloat
     let notchHeight: CGFloat
+    /// 让路时连着物理刘海的那截颈宽；没有物理刘海、或挂在刘海下方让路时为 0（见 NotchShape）。
+    let stemWidth: CGFloat
     let onHover: (Bool) -> Void
     let onPillHover: (Bool) -> Void
     let onClick: () -> Void
@@ -56,7 +60,10 @@ struct IslandView: View {
     var body: some View {
         let pair = FocusRule.pair(store, seen, pinned: state.pinned)
         let label = pair.primary.flatMap { FocusRule.label($0, seen, store) }
-        let shape = NotchShape(topRadius: radii.top, bottomRadius: radii.bottom)
+        let shape = NotchShape(topRadius: radii.top, bottomRadius: radii.bottom,
+                               drop: state.dodge, dropDepth: state.dodgeDepth, stemWidth: stemWidth)
+        // 接鼠标只认主体、不认颈：让路时鼠标横穿刘海底下去点另一侧的菜单，不该算悬停。
+        let hitShape = NotchShape(topRadius: radii.top, bottomRadius: radii.bottom)
 
         ZStack(alignment: .top) {
             // 胶囊画在岛的下面：收回时藏进岛里，出场时从岛的右缘滴出去。
@@ -66,7 +73,7 @@ struct IslandView: View {
                              pillOut: state.pillOut,
                              pillExtra: state.pillHover ? IslandController.pillPreview : 0,
                              pillWidth: state.pillWidth, notchHeight: notchHeight,
-                             bottomRadius: NotchShape.closed.bottom,
+                             bottomRadius: NotchShape.closed.bottom, lift: state.dodge,
                              onTap: { onSwitch(other.id) }, onHover: onPillHover) {
                     SessionPill(pill: pill,
                                 preview: state.pillHover
@@ -107,7 +114,7 @@ struct IslandView: View {
             .overlay { if open { shape.stroke(Color.white.opacity(0.08), lineWidth: 1) } }
             .shadow(color: .black.opacity(open ? 0.55 : 0), radius: 10, y: 4)
             // 悬停与点击只挂在形状上：舞台比形状大，那片透明边缘不该触发任何事。
-            .contentShape(shape)
+            .contentShape(hitShape)
             .onHover(perform: onHover)
             .onTapGesture { if !state.detail { onClick() } }   // 面板里的点击交给面板自己
         }
@@ -138,13 +145,17 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
     let pillWidth: CGFloat
     let notchHeight: CGFloat
     let bottomRadius: CGFloat
+    /// 岛此刻给菜单栏让了多少。连桥层的岛身平时往上伸出画布（免得模糊吃掉顶边）；让路时整层跟着下移，
+    /// 再往上伸就是一条黑带盖在菜单栏上，所以让多少就少伸多少。
+    let lift: CGFloat
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let content: () -> Content
 
     init(islandWidth: CGFloat, anchorWidth: CGFloat? = nil, liquid: Bool = true, pillOut: CGFloat, pillExtra: CGFloat, pillWidth: CGFloat, notchHeight: CGFloat,
-         bottomRadius: CGFloat, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
+         bottomRadius: CGFloat, lift: CGFloat = 0, onTap: @escaping () -> Void, onHover: @escaping (Bool) -> Void,
          @ViewBuilder content: @escaping () -> Content) {
+        self.lift = lift
         self.islandWidth = islandWidth
         self.anchorWidth = anchorWidth
         self.liquid = liquid
@@ -184,8 +195,9 @@ struct PillAssembly<Content: View>: View, @preconcurrency Animatable {
                         ctx.addFilter(.blur(radius: 4))
                         ctx.drawLayer { layer in
                             // 岛身：去掉两侧凹肩，顶边伸出画布之外（免得模糊把顶边吃掉），底角与真实形状同半径。
-                            let body = CGRect(x: mid - islandWidth / 2 + NotchShape.closed.top, y: -24,
-                                              width: max(0, islandWidth - 2 * NotchShape.closed.top), height: notchHeight + 24)
+                            let reach = max(0, 24 - lift)
+                            let body = CGRect(x: mid - islandWidth / 2 + NotchShape.closed.top, y: -reach,
+                                              width: max(0, islandWidth - 2 * NotchShape.closed.top), height: notchHeight + reach)
                             layer.fill(Path(roundedRect: body, cornerRadius: bottomRadius, style: .continuous), with: .color(.black))
                             layer.fill(Path(roundedRect: CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h),
                                             cornerRadius: h / 2, style: .continuous), with: .color(.black))
