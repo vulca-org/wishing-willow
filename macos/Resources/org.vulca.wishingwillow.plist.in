@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- make autostart 用：登录时打开一次 build/ 里的灵动岛。@BUNDLE@ 由 Makefile 换成绝对路径。 -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.vulca.wishingwillow</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/open</string>
+		<string>@BUNDLE@</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>

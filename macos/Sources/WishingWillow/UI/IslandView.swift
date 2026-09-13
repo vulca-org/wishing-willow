@@ -413,8 +413,8 @@ struct IslandExpandedContent: View {
                     reading(s, tl).reveal(2, shown)
                     if let tl { working(tl).reveal(3, shown) }
                     stats(s, tl).reveal(4, shown)
-                    if let other = pair.secondary, let pill = FocusRule.pill(other, seen, store) {
-                        otherRow(s, other, pill).reveal(5, shown)
+                    if let other = FocusRule.flipTarget(store, after: s) {
+                        otherRow(s, other, FocusRule.pill(other, seen, store)).reveal(5, shown)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -638,12 +638,21 @@ struct IslandExpandedContent: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Ink.fill))
     }
 
-    private func otherRow(_ s: SessionState, _ other: SessionState, _ pill: FocusRule.Pill) -> some View {
+    private func otherRow(_ s: SessionState, _ other: SessionState, _ pill: FocusRule.Pill?) -> some View {
         Button { onSwitch?(other.id) } label: {
             HStack(spacing: 10) {
-                SessionPill(pill: pill)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                if let pill {
+                    SessionPill(pill: pill)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                } else {
+                    // 看过且没在答的会话在收起态不占胶囊，没有符号可放：写它此刻的阶段。
+                    Text(Self.phaseWord(other, store: store))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Ink.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(store.progress(for: other)?.tag ?? other.tag ?? FocusRule.lastLoggedTag(other, store) ?? L("还没有标签", "No tag yet"))
                         .font(.system(size: 12.5, weight: .semibold))

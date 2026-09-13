@@ -57,6 +57,16 @@ enum FocusRule {
         return (p, s)
     }
 
+    /// 悬停展开态底部那一行：点它翻到下一个在跑的会话，按在跑列表的顺序循环，看过没看过都翻得到。
+    /// 先前这一行放的是 `secondary`（和胶囊同一条规则，只挑有话说的）：看过之后整行消失，悬停时翻不到别的会话；
+    /// 三个都在跑时也只在头两个之间来回（用户 2026-09-13：「悬停的时候翻页功能没了，不方便快速查看」）。
+    static func flipTarget(_ store: WillowStore, after primary: SessionState?) -> SessionState? {
+        let l = live(store)
+        guard let primary, l.count > 1 else { return nil }
+        guard let i = l.firstIndex(where: { $0.id == primary.id }) else { return l.first }
+        return l[(i + 1) % l.count]
+    }
+
     /// 并行计数。在跑 = 最近 10 分钟有动静（灵动岛上展示的那些）；空闲 = 进程还开着、但超过 10 分钟没动静。
     ///
     /// 先前胶囊上写「+N」、展开态写「另有 N 个」，N 是主会话与胶囊之外的数：3 个并行时显示「+1」。

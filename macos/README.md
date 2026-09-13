@@ -43,14 +43,15 @@
 ## 装
 
 ```bash
-make install     # 编译并放进 /Applications
-open /Applications/WishingWillow.app
+make run         # 编译并打开 build/ 里的那份
+make autostart   # 登录后自动打开这一份（装上时立刻打开一次）；取消用 make autostart-off
 ```
 
 不签名、不公证，因为**本机编译出来的二进制不带 quarantine 属性，Gatekeeper 不拦**。
 需要那一套的是下载来的 app，而这个项目故意不走下载分发。
 
-`make run` 直接跑 `build/` 里的那份，不动 `/Applications`。
+本机只留 `build/` 这一份：`make app` 换掉的就是开机打开的那个。`make install` 会在 `/Applications` 再放一份，
+两份同时开着就是两个灵动岛叠在刘海上、各跑各的版本——自启指向 `build/`，不要再装那一份。
 
 ## 四种状态
 

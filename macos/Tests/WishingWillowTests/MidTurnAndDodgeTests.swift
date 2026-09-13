@@ -181,6 +181,36 @@ struct MidTurnAndDodgeTests {
         #expect(DetailView.current(store.sessions, picked: nil, focus: "gone")?.id == first.id)
     }
 
+    @Test("悬停翻页：底部那一行按在跑顺序循环到下一个会话，全都看过、胶囊规则挑不出第二个时也翻得到，三次走遍再回到开头；只有一个会话时没有这一行")
+    func flipThrough() throws {
+        let d = try dir()
+        for (id, ago) in [("a", 10.0), ("b", 20.0), ("c", 30.0)] {
+            try write(record(["decode": "读成了", "tag": "标签\(id)"], id: id, ago: ago), "\(id).json", in: d)
+        }
+        let store = WillowStore(directory: d)
+        store.reload()
+        let seen = SeenStore(ephemeral: true)
+        for s in store.sessions { seen.markSeen(s) }
+        let l = FocusRule.live(store)
+        #expect(l.count == 3)
+        #expect(FocusRule.secondary(store, seen, primary: l[0]) == nil)
+        var visited = [l[0].id]
+        var cur = l[0]
+        for _ in 0..<3 {
+            let next = try #require(FocusRule.flipTarget(store, after: cur))
+            visited.append(next.id)
+            cur = next
+        }
+        #expect(Set(visited.prefix(3)) == Set(l.map(\.id)))
+        #expect(visited.last == l[0].id)
+
+        let one = try dir()
+        try write(record(["decode": "读成了"], id: "solo"), "solo.json", in: one)
+        let single = WillowStore(directory: one)
+        single.reload()
+        #expect(FocusRule.flipTarget(single, after: single.sessions.first) == nil)
+    }
+
     @Test("菜单栏让路：让开后鼠标在带子里一直让；离开不到 0.35 秒不回；超过才回；有菜单开着不回")
     func dodgeEnd() {
         let band = DodgeRule.band(screen: CGRect(x: 0, y: 0, width: 1280, height: 832), height: 28)
