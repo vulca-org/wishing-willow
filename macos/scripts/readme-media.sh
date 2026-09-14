@@ -1,11 +1,11 @@
 #!/bin/bash
-# README 素材：在 --backdrop 的干净底色上，用虚构的会话按真实事件顺序跑一遍灵动岛，拍中英两套静帧和一段展开动图。
+# README 素材：在 --backdrop 的干净底色上，用虚构的会话按真实事件顺序跑一遍灵动岛，拍中英两套静帧和三段动图（声明到达弹出精简卡、悬停长成完整面板、点开面板）。
 #
 #   macos/scripts/readme-media.sh [二进制]      默认 macos/.build/release/WishingWillow
-#   PARTS=detail macos/scripts/readme-media.sh  只录某一段（stills / motion / detail，默认全录）
+#   PARTS=detail macos/scripts/readme-media.sh  只录某一段（stills / motion / hover / detail，默认全录）
 #
 # 输出到 docs/media/，中间文件在 macos/build/readme-media/（不进仓库）。
-# 需要：屏幕录制权限（screencapture）、node、ffmpeg。会先关掉正在跑的 WishingWillow。
+# 需要：屏幕录制权限（screencapture）、node、ffmpeg。会先关掉正在跑的 WishingWillow，退出时重新打开 macos/build/WishingWillow.app。
 # 数据全部虚构（工作区 atlas / billing、上传测试的对话）；拍摄区域先盖一层底色（--backdrop，刘海下方 760×520pt），不会拍进别的窗口。
 # 屏幕锁定时区域截图会失败（could not create image from rect），先解锁。
 # 事件照真的来：会话由插件自己的 capture.mjs 建，transcript 一行一行追加，灵动岛按到达时刻展开收起。
@@ -17,13 +17,18 @@ OUT="$ROOT/docs/media"
 WORK="$ROOT/macos/build/readme-media"
 HOOKS="$ROOT/plugin/hooks"
 mkdir -p "$OUT"
-PARTS="${PARTS:-stills motion detail}"
+PARTS="${PARTS:-stills motion hover detail}"
 mkdir -p "$WORK"
+
+restore() { open "$ROOT/macos/build/WishingWillow.app" 2>/dev/null || true; }
+trap restore EXIT
 
 # 刘海在屏幕水平正中；截图区域都以它为轴。
 W=$(osascript -l JavaScript -e 'ObjC.import("AppKit"); var s = $.NSScreen.screens; var f = s.objectAtIndex(0).frame; f.size.width')
 C=$(python3 -c "print(int(float('$W') / 2))")
-EXPANDED="$((C - 340)),0,680,500"
+# 主动弹出的精简卡约 440×79pt，完整悬停面板长会话约 360pt 高（2026-09-13 实拍），各留一圈余量。
+POPUP="$((C - 280)),0,560,100"
+PANEL="$((C - 340)),0,680,430"
 COMPACT="$((C - 300)),0,600,96"
 DETAIL="$((C - 350)),0,700,510"
 
@@ -63,11 +68,14 @@ def A(mid, content, read, write=2400, out=900):
                         "content": content}}
 def tool(mid, tid, name, inp, read, out=600):
     return A(mid, [{"type": "tool_use", "id": tid, "name": name, "input": inp}], read, out=out)
+# 插件现在要求四行（第三行「我补上的」灵动岛不显示，但解析不能被它带偏）。
 declare = ("你批准的：只找出上传测试为什么只在 CI 上失败，不改代码。\n"
            "我读成了：重写上传测试的重试逻辑，把不稳定的测试修好。\n"
+           "我补上的：把「找原因」扩成「修好」；改动范围定为 retry.go。\n"
            "标签：修上传测试") if zh else (
            "You approved: find out why the upload test fails only on CI, without changing code.\n"
            "How I read it: Rewrite the upload test’s retry logic so it stops flaking.\n"
+           "What I filled in: widened “find the cause” to “fix it”; scoped the change to retry.go.\n"
            "Tag: Rewrite retry")
 rows = {
  "thinking": [A("m1", [{"type": "thinking", "thinking": ""}], 412000)],
@@ -109,7 +117,8 @@ prompts() {  # $1 语言 → 两句原话（主会话、另一个会话）
   fi
 }
 
-# ---- 静帧：收起（在跑 + 胶囊）→ 声明到达展开 → 等你选择展开 → 收起（问号计时） ----
+# ---- 静帧：收起（在跑 + 胶囊）→ 声明到达弹出精简卡 → 等你选择弹出题面 → 收起（问号计时） ----
+#      精简卡弹出 6 秒后自己收回，所以两张弹出图都在到达后一两秒内拍。
 for L in en zh; do
   case " $PARTS " in *" stills "*) ;; *) break ;; esac
   prompts "$L"
@@ -123,21 +132,20 @@ for L in en zh; do
   sleep 3
   row "$TO" other "$L"; row "$TM" thinking "$L"; sleep 4
   shot "$COMPACT" "$OUT/compact-running.$L.png"
-  row "$TM" declare "$L"; sleep 0.8
+  row "$TM" declare "$L"; sleep 1.2
+  shot "$POPUP" "$OUT/popup.$L.png"
   row "$TM" grep "$L";    sleep 0.7
   row "$TM" bash "$L";    sleep 0.8
-  row "$TM" read "$L";    sleep 1.2
-  shot "$EXPANDED" "$OUT/expanded.$L.png"
-  sleep 5
+  row "$TM" read "$L";    sleep 5
   row "$TM" edit "$L";    sleep 2
-  row "$TM" ask "$L";     sleep 2.5
-  shot "$EXPANDED" "$OUT/waiting.$L.png"
-  sleep 6
+  row "$TM" ask "$L";     sleep 1.5
+  shot "$POPUP" "$OUT/waiting.$L.png"
+  sleep 7
   shot "$COMPACT" "$OUT/compact-waiting.$L.png"
   wait
 done
 
-# ---- 动图：收起在跑 → 声明到达，从刘海往两边、再往下展开 → 6 秒后收回 ----
+# ---- 动图：收起在跑 → 声明到达，从刘海弹出精简卡 → 6 秒后收回 ----
 for L in en zh; do
   case " $PARTS " in *" motion "*) ;; *) break ;; esac
   prompts "$L"
@@ -146,12 +154,12 @@ for L in en zh; do
   session "$D" "media-motion-$L" /work/atlas "$MAIN_PROMPT"
   TM="$D/media-motion-$L.transcript.jsonl"
   stop
-  cursor_clear "$EXPANDED"
+  cursor_clear "$POPUP"
   WILLOW_LANG=$L WILLOW_STATE_DIR="$D" "$BIN" --present 22 --real --passive --backdrop 2>"$WORK/motion-$L.log" &
   sleep 3
   row "$TM" thinking "$L"; sleep 2
   rm -f "$WORK/motion-$L.mov"
-  screencapture -x -v -V 11 -R "$EXPANDED" "$WORK/motion-$L.mov" &
+  screencapture -x -v -V 11 -R "$POPUP" "$WORK/motion-$L.mov" &
   REC=$!
   sleep 1.5
   row "$TM" declare "$L"; sleep 0.8
@@ -162,9 +170,46 @@ for L in en zh; do
   log "录屏 motion-$L.mov"
   wait
   ffmpeg -loglevel error -y -i "$WORK/motion-$L.mov" \
-    -vf "fps=15,scale=680:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+    -vf "fps=15,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
     "$OUT/expand.$L.gif"
   log "动图 expand.$L.gif"
+done
+
+# ---- 悬停：精简卡 → 鼠标停上去长成完整面板；录动图并拍一张完整面板 ----
+#      非 passive（素材录制时真鼠标的悬停一律不理）：第 8.5 秒 --flash 弹出精简卡，第 10.5 秒 --flash-hover 模拟停上去，第 14.5 秒退出。
+#      时序与 social/2026-09/record.sh 的 hover 段相同。两个会话在跑，面板底部才有翻页那一行。
+for L in en zh; do
+  case " $PARTS " in *" hover "*) ;; *) break ;; esac
+  prompts "$L"
+  D="$WORK/hover-$L"
+  rm -rf "$D"
+  session "$D" "media-hover-$L" /work/atlas "$MAIN_PROMPT"
+  session "$D" "media-hover-other-$L" /work/billing "$OTHER_PROMPT"
+  TM="$D/media-hover-$L.transcript.jsonl"; TO="$D/media-hover-other-$L.transcript.jsonl"
+  row "$TO" other "$L"; row "$TM" thinking "$L"
+  row "$TM" declare "$L"; row "$TM" grep "$L"; row "$TM" bash "$L"; row "$TM" read "$L"
+  stop
+  cursor_clear "$PANEL"
+  WILLOW_LANG=$L WILLOW_STATE_DIR="$D" "$BIN" --present 12 --real --backdrop --flash --flash-hover 2>"$WORK/hover-$L.log" &
+  APP=$!
+  sleep 7.3
+  rm -f "$WORK/hover-$L.mov"
+  screencapture -x -v -V 6.8 -R "$PANEL" "$WORK/hover-$L.mov" &
+  REC=$!
+  sleep 5
+  shot "$PANEL" "$OUT/expanded.$L.png"
+  wait "$REC"
+  log "录屏 hover-$L.mov"
+  n=0; while kill -0 "$APP" 2>/dev/null && [ $n -lt 30 ]; do sleep 0.5; n=$((n + 1)); done
+  if kill -0 "$APP" 2>/dev/null; then
+    log "演示进程到时没退出——hover-$L 作废"
+    kill "$APP" 2>/dev/null || true; sleep 1; kill -9 "$APP" 2>/dev/null || true
+    rm -f "$OUT/expanded.$L.png"; exit 1
+  fi
+  ffmpeg -loglevel error -y -i "$WORK/hover-$L.mov" \
+    -vf "fps=15,scale=680:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+    "$OUT/hover.$L.gif"
+  log "动图 hover.$L.gif"
 done
 
 # ---- 点击面板：两个会话、七轮历史（写了理解 / 自标 ⚠ / 问了没写 / 没问），加一轮进行中；
