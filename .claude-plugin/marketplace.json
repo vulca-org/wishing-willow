@@ -6,7 +6,7 @@
     {
       "name": "willow",
       "source": "./plugin",
-      "description": "Shows the model's decoding of your request next to your verbatim prompt. No scoring, no blocking, nothing leaves your machine.",
+      "description": "Shows the model's decoding of your request next to your verbatim prompt. No scoring, no blocking, and its records stay on your Mac.",
       "category": "productivity",
       "license": "MIT",
       "keywords": ["alignment", "intent", "drift", "statusline", "hooks"]
