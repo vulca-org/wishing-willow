@@ -354,10 +354,8 @@ cd macos && swift test         # 灵动岛：16 组 57 个测试
 [中文](https://x.com/yhoru120221/status/2099468031495639266)与[英文](https://x.com/yhoru120221/status/2099466189453901972) thread，
 以及 [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7505201875286138880/)。
 
-做它们的全部东西都在 [`social/2026-09/`](social/2026-09/)：分镜（[`storyboard.md`](social/2026-09/storyboard.md)）、
-成片管线（[`film4.py`](social/2026-09/film4.py)）、灵动岛录屏（[`record.sh`](social/2026-09/record.sh)，
-用虚构会话在纯色底上录真实的 app）、图卡（[`cards.py`](social/2026-09/cards.py)）。
-配音用 Gemini 语音合成生成。渲染出的成片不入库。
+片中的灵动岛画面和本页的图一样，是用虚构会话在纯色底上录的真实 app。配音用 Gemini 语音合成生成。
+成片与图卡的制作管线不放在这个仓库里。
 
 ## 重新生成图片
 

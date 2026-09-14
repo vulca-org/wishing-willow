@@ -456,13 +456,10 @@ X in [English](https://x.com/yhoru120221/status/2099466189453901972) and
 [Chinese](https://x.com/yhoru120221/status/2099468031495639266), and
 [Xiaohongshu](https://www.xiaohongshu.com/explore/6aa7ce6e0000000028036782).
 
-Everything that made them is in [`social/2026-09/`](social/2026-09/): the shot list
-([`storyboard.md`](social/2026-09/storyboard.md)), the film pipeline
-([`film4.py`](social/2026-09/film4.py)), the island footage
-([`record.sh`](social/2026-09/record.sh), which records the real app on a plain
-backdrop with made-up sessions), and the cards ([`cards.py`](social/2026-09/cards.py)).
-The voiceover was generated with Gemini text-to-speech. Rendered films are not
-committed.
+The island footage in the film was recorded from the real app on a plain backdrop,
+with made-up sessions, the same way the images on this page were. The voiceover was
+generated with Gemini text-to-speech. The pipeline that made the film and the cards is
+kept outside this repository.
 
 ## Regenerating the images
 

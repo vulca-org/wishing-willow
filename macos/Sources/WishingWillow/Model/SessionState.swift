@@ -105,7 +105,7 @@ struct SessionState: Identifiable, Sendable, Equatable {
     /// 一轮开着却一小时没有任何动静，多半是 Stop 钩子没跑到（插件被停用、钩子报错），不再算在跑。
     var isRunning: Bool {
         // 看轮次标记，不看 declaration：「继续吧」这类短句和后台任务通知在 declaration 里是「没问」，轮次照样开着。
-        // 用 declaration == .inProgress 会把它们算成空闲（2026-09-13 实拍：SIGIR 会话这一轮开着，面板写「这一轮没问」、计数少算一个）。
+        // 用 declaration == .inProgress 会把它们算成空闲（2026-09-13 实拍：一个查文献的会话这一轮开着，面板写「这一轮没问」、计数少算一个）。
         guard isOpen, record.hasTurnEndMarker, record.turnEndedAt == nil, liveInterruptedAt == nil else { return false }
         guard let last = [record.updatedAt, liveLastEvent, transcriptWrittenAt].compactMap({ $0 }).max() else { return false }
         return now.timeIntervalSince(last) < Self.stuckAfter

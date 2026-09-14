@@ -177,7 +177,7 @@ done
 
 # ---- 悬停：精简卡 → 鼠标停上去长成完整面板；录动图并拍一张完整面板 ----
 #      非 passive（素材录制时真鼠标的悬停一律不理）：第 8.5 秒 --flash 弹出精简卡，第 10.5 秒 --flash-hover 模拟停上去，第 14.5 秒退出。
-#      时序与 social/2026-09/record.sh 的 hover 段相同。两个会话在跑，面板底部才有翻页那一行。
+#      时序与发布片录屏脚本的 hover 段相同。两个会话在跑，面板底部才有翻页那一行。
 for L in en zh; do
   case " $PARTS " in *" hover "*) ;; *) break ;; esac
   prompts "$L"
